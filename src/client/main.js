@@ -98,7 +98,7 @@ let font;
 
 const level_def = {
   seed: 'test',
-  w: 16, h: 12,
+  w: 16, h: 14,
 };
 
 const FACES = [{
@@ -128,6 +128,67 @@ function faceMatch(fa, fb) {
 function resourceInit(game_state, cell) {
   cell.resources = 5 + game_state.rand.range(5);
 }
+
+function templeInit(game_state, cell) {
+  cell.progress_max = 8;
+}
+
+function temple2Init(game_state, cell) {
+  cell.progress_max = 12;
+}
+
+function templeActivate(game_state, cell, die) {
+  let { advanced } = cell.doProgress(game_state, die, true);
+  if (advanced) {
+    // TODO: dialog here?
+    game_state.addFloater({
+      pos: cell.pos,
+      text: 'Explored!',
+    });
+    cell.type += 4;
+    cell.init(game_state);
+    cell.used_idx = -1;
+  }
+}
+
+function templeComplete(game_state) {
+  let count = 0;
+  game_state.board.forEach((row) => {
+    row.forEach((cell) => {
+      if (cell.temple_completed) {
+        ++count;
+      }
+    });
+  });
+  return count === 4;
+}
+
+function temple2Activate(game_state, cell, die) {
+  let { advanced } = cell.doProgress(game_state, die, true);
+  if (advanced) {
+    // TODO: dialog here?
+    game_state.addFloater({
+      pos: cell.pos,
+      text: 'Die was harvested!',
+    });
+    // remove die
+    let idx = game_state.dice.indexOf(die);
+    ridx(game_state.dice, idx);
+    cell.completed = true;
+    cell.temple_completed = true;
+    cell.used_idx = -1;
+    if (templeComplete(game_state)) {
+      ui.modalDialog({
+        title: 'You win!',
+        text: 'The temple has been unlocked, unlocking your path to prosperity and victory.\n\nThanks for playing!',
+        buttons: {
+          Ok: null,
+        }
+      });
+    }
+  }
+}
+
 
 function drawDieFace(face_state, x, y, z, selected, used, focused) {
   let color1 = selected ? bg_color : used ? fg_color_used : fg_color;
@@ -380,6 +441,35 @@ function marketActivate(game_state, cell, die) {
   };
 }
 
+const FORAGE_MAX_ODDS = 32;
+const FORAGE_RESULTS = [{
+  odds: 4,
+  currency: 'crop',
+}, {
+  odds: 2,
+  currency: 'seeds',
+}, {
+  odds: 1,
+  currency: 'money',
+}, {
+  odds: 12,
+  currency: 'wood',
+}, {
+  odds: 13,
+  currency: 'stone',
+}];
+
+function forageRoll(game_state) {
+  let roll = game_state.rand.range(FORAGE_MAX_ODDS);
+  let idx = 0;
+  while (roll >= FORAGE_RESULTS[idx].odds) {
+    roll -= FORAGE_RESULTS[idx].odds;
+    idx++;
+  }
+  let { currency } = FORAGE_RESULTS[idx];
+  return currency;
+}
+
 const CELL_TYPES = [{
   name: 'Unexplored', // just a tile, not actually a type
   action: 'Scout',
@@ -396,10 +486,26 @@ const CELL_TYPES = [{
   },
 }, {
   name: 'Meadow',
-  label: 'Meadow',
+  label: '', // 'Meadow',
   action: 'Forage',
   indoors: false,
   need_face: Face.Explore,
+  hide_face: true,
+  activate: function (game_state, cell, die) {
+    let num_rolls = tradeDiscount(die.getFaceState().level) + 1;
+    let gains = {};
+    for (let ii = 0; ii < num_rolls; ++ii) {
+      let currency = forageRoll(game_state);
+      gains[currency] = (gains[currency] || 0) + 1;
+    }
+    for (let key in gains) {
+      game_state.resourceMod(cell, key, gains[key]);
+    }
+    cell.progress = 0;
+    cell.progress_max = num_rolls;
+    cell.doProgress(game_state, die, true);
+    cell.progress_max = 0;
+  },
 }, {
   name: 'Bedroom',
   label: 'Bunk',
@@ -658,16 +764,70 @@ const CELL_TYPES = [{
   },
 }, {
   name: 'TempleUpperLeft',
+  label: 'Temple',
+  action: 'Explore',
   indoors: false,
+  wide: true,
+  tall: true,
+  need_face: Face.Explore,
+  init: templeInit,
+  activate: templeActivate,
 }, {
   name: 'TempleUpperRight',
+  action: 'Explore',
   indoors: false,
+  tall: true,
+  need_face: Face.Explore,
+  init: templeInit,
+  activate: templeActivate,
 }, {
   name: 'TempleLowerLeft',
+  action: 'Explore',
   indoors: false,
+  wide: true,
+  need_face: Face.Explore,
+  init: templeInit,
+  activate: templeActivate,
 }, {
   name: 'TempleLowerRight',
+  action: 'Explore',
   indoors: false,
+  need_face: Face.Explore,
+  init: templeInit,
+  activate: templeActivate,
+}, {
+  name: 'TempleStage2UpperLeft',
+  label: 'Temple',
+  action: 'Harvest',
+  indoors: false,
+  wide: true,
+  tall: true,
+  need_face: Face.Farm,
+  init: temple2Init,
+  activate: temple2Activate,
+}, {
+  name: 'TempleStage2UpperRight',
+  action: 'Harvest',
+  indoors: false,
+  tall: true,
+  need_face: Face.Build,
+  init: temple2Init,
+  activate: temple2Activate,
+}, {
+  name: 'TempleStage2LowerLeft',
+  action: 'Harvest',
+  indoors: false,
+  wide: true,
+  need_face: Face.Gather,
+  init: temple2Init,
+  activate: temple2Activate,
+}, {
+  name: 'TempleStage2LowerRight',
+  action: 'Harvest',
+  indoors: false,
+  need_face: Face.Any,
+  init: temple2Init,
+  activate: temple2Activate,
 }];
 const CellType = {};
 CELL_TYPES.forEach((a, idx) => {
@@ -935,6 +1095,102 @@ function resourceActivate(game_state, cell, die) {
   }
 }
 
+const DX = [-1,1,0,0];
+const DY = [0,0,-1,1];
+
+function genMap(game_state) {
+  let { w, h, rand } = game_state;
+
+  // place goal
+  let is_horiz = rand.range(w + h) < w;
+  let x;
+  let y;
+  if (is_horiz) {
+    x = 1 + rand.range(w - 3);
+    y = rand.range(2) ?
+      1 + rand.range(2) :
+      h - 4 + rand.range(2);
+  } else {
+    x = rand.range(2) ?
+      1 + rand.range(2) :
+      w - 3;
+    y = 1 + rand.range(h - 3);
+  }
+
+  let done = {};
+  let queued_tiles = {
+    forest: [],
+    quarry: [],
+  };
+
+  function setTileAndQueue(xx, yy, type, queue) {
+    game_state.setCell([xx,yy], type);
+    let key = xx + yy * 1000;
+    done[key] = true;
+    for (let ii = 0; ii < 4; ++ii) {
+      let pos = [xx + DX[ii], yy + DY[ii]];
+      key = pos[0] + pos[1] * 1000;
+      if (!done[key]) {
+        queued_tiles[queue].push(pos);
+      }
+    }
+  }
+
+  setTileAndQueue(x,y, CellType.TempleUpperLeft, 'forest');
+  setTileAndQueue(x+1,y, CellType.TempleUpperRight, 'forest');
+  setTileAndQueue(x,y+1, CellType.TempleLowerLeft, 'forest');
+  setTileAndQueue(x+1,y+1, CellType.TempleLowerRight, 'forest');
+
+  // Add some random forest and quarry tiles to grow from
+  for (let ii = 0; ii < 6; ++ii) {
+    for (let jj = 0; jj < 2; ++jj) {
+      let type = jj ? CellType.Forest : CellType.Quarry;
+      let queue = jj ? 'forest' : 'quarry';
+      while (true) {
+        x = rand.range(w);
+        y = rand.range(h);
+        let key = x + y * 1000;
+        if (done[key]) {
+          continue;
+        }
+        let cell = game_state.getCell([x,y]);
+        if (cell.type !== CellType.Meadow || cell.is_initial) {
+          continue;
+        }
+        setTileAndQueue(x, y, type, queue);
+        break;
+      }
+    }
+  }
+
+  // Alternatively grow from forests and quarries
+  let tries = 200;
+  let jj = 1;
+  while (tries) {
+    jj = (jj + 1) % 2;
+    --tries;
+
+    let type = jj ? CellType.Forest : CellType.Quarry;
+    let queue = jj ? 'forest' : 'quarry';
+    let list = queued_tiles[queue];
+    if (!list.length) {
+      continue;
+    }
+    let idx = rand.range(list.length);
+    x = list[idx][0];
+    y = list[idx][1];
+    let key = x + y * 1000;
+    if (done[key]) {
+      continue;
+    }
+    let cell = game_state.getCell([x,y]);
+    if (!cell || cell.type !== CellType.Meadow || cell.is_initial) {
+      continue;
+    }
+    setTileAndQueue(x, y, type, queue);
+  }
+}
+
 function xpForNextLevel(level) {
   return level * level;
 }
@@ -1001,7 +1257,7 @@ class FaceState {
     this.type = type;
     this.level = 1;
     if (engine.DEBUG) {
-      this.level = 8;
+      // this.level = 8;
     }
     this.xp = 0;
     this.xp_next = xpForNextLevel(this.level);
@@ -1049,10 +1305,11 @@ class GameState {
       }
       this.board.push(row);
     }
+
     this.dice = [];
     [
-      [5,6],
-      [6,6],
+      [6,7],
+      [7,7],
     ].forEach((pos) => {
       let die = new Die(pos);
       die.cur_face = this.rand.range(6);
@@ -1060,24 +1317,27 @@ class GameState {
       this.setInitialCell(pos, CellType.Bedroom);
     });
     [
-      [3,5,CellType.StorageSeed],
-      [4,5,CellType.StorageCrop],
-      [3,6,CellType.StorageWood],
-      [4,6,CellType.StorageStone],
-      [5,4,CellType.Build],
-      [5,5,CellType.KitchenLeft],
-      [6,5,CellType.KitchenRight],
-      [5,7,CellType.Crop],
-      [6,7,CellType.Meadow],
-      [7,5,CellType.Forest],
-      [8,5,CellType.Quarry],
-      [9,5,CellType.TownBuy],
-      [10,5,CellType.TownSell],
-      [9,6,CellType.TownEntertain],
-      [10,6,CellType.StorageMoney],
+      [4,6,CellType.StorageSeed],
+      [5,6,CellType.StorageCrop],
+      [4,7,CellType.StorageWood],
+      [5,7,CellType.StorageStone],
+      [6,5,CellType.Build],
+      [6,6,CellType.KitchenLeft],
+      [7,6,CellType.KitchenRight],
+      [6,8,CellType.Crop],
+      [7,8,CellType.Meadow],
+      [8,6,CellType.Forest],
+      [9,6,CellType.Quarry],
+      [10,6,CellType.TownBuy],
+      [11,6,CellType.TownSell],
+      [10,7,CellType.TownEntertain],
+      [11,7,CellType.StorageMoney],
     ].forEach((pair) => {
       this.setInitialCell(pair, pair[2]);
     });
+
+    genMap(this);
+
     this.build_mode = null;
     this.selected_die = null;
     this.prompt = null;
@@ -1090,23 +1350,23 @@ class GameState {
     if (engine.DEBUG) {
       // Kitchen test
       // this.selectDie(0);
-      // this.activateCell([5,5]);
+      // this.activateCell([6,6]);
       // setTimeout(() => {
       //   this.selectDie(1);
-      //   this.activateCell([6,5]);
+      //   this.activateCell([7,6]);
       // }, 500);
 
       // Sell test
       // this.crop = 11;
       // this.dice[0].cur_face = 5;
       // this.selectDie(0);
-      // this.activateCell([10,5]);
+      // this.activateCell([11,6]);
 
       // Buy test
       // this.money = 25;
       // this.dice[0].cur_face = 5;
       // this.selectDie(0);
-      // this.activateCell([9,5]);
+      // this.activateCell([10,6]);
 
       // Build test
       // this.wood = 4;
@@ -1114,8 +1374,12 @@ class GameState {
       // this.money = 10;
       // this.dice[0].cur_face = 4;
       // this.selectDie(0);
-      // this.activateCell([5,4]);
-      // this.setExplored([7,7]);
+      // this.activateCell([6,5]);
+      // this.setExplored([8,8]);
+
+      // Forage test
+      // this.selectDie(0);
+      // this.activateCell([7,8]);
     }
   }
   lazyInterpReset(key, value) {
@@ -1225,6 +1489,7 @@ class GameState {
   setInitialCell(pos, type) {
     this.setCell(pos, type);
     this.setExplored(pos);
+    this.board[pos[1]][pos[0]].is_initial = true;
     let { currency } = CELL_TYPES[type];
     if (currency) {
       this.resource_pos[currency] = pos;
@@ -1276,13 +1541,21 @@ class GameState {
     }
   }
 
-  freeDieAt(pos) {
+  dieAt(pos) {
     let { dice } = this;
     for (let ii = 0; ii < dice.length; ++ii) {
       let die = dice[ii];
-      if (!die.used && v2same(die.pos, pos)) {
+      if (v2same(die.pos, pos)) {
         return ii;
       }
+    }
+    return -1;
+  }
+
+  freeDieAt(pos) {
+    let die_idx = this.dieAt(pos);
+    if (die_idx !== -1 && !this.dice[die_idx].used) {
+      return die_idx;
     }
     return -1;
   }
@@ -1393,7 +1666,7 @@ function init() {
   sprites.cells = createSprite({
     name: 'cells',
     ws: [1,1,1,1,1,1,1,1],
-    hs: [1,1,1,1],
+    hs: [1,1,1,1,1,1,1,1],
     size: [CELLDIM, CELLDIM],
   });
   sprites.faces = createSprite({
@@ -1410,10 +1683,11 @@ function init() {
   ({ font } = ui);
 }
 
-const DX = [-1,1,0,0];
-const DY = [0,0,-1,1];
 function neighborVisible(x, y) {
   let { board } = game_state;
+  if (!game_state.getCell([x,y])) {
+    return false;
+  }
   for (let ii = 0; ii < DX.length; ++ii) {
     let xx = x + DX[ii];
     let yy = y + DY[ii];
@@ -1451,7 +1725,7 @@ function drawProgress(x, y, cell, color) {
     game_state.lazyInterpReset(`dp_${x}_${y}`, 0);
   }
   let p = round(interp_progress * w);
-  p = clamp(p, interp_progress ? 1 : 0, interp_progress < pmax ? w - 1 : w);
+  p = clamp(p, interp_progress ? 1 : 0, interp_progress < 1 ? w - 1 : w);
   if (p !== w) {
     drawRect(x0 + p, y0, x1, y1, z, bg_color);
     if (pmax < w/2) {
@@ -1489,7 +1763,7 @@ function drawBoard() {
           color: fg_color,
         });
       }
-      if (neighborVisible(xx, yy+1)) {
+      if (neighborVisible(xx, yy+1) && !eff_type.tall) {
         let celldown = board[yy+1][xx];
         let typedown = CELL_TYPES[celldown.type];
         let interior = type.indoors && typedown.indoors;
@@ -1504,12 +1778,13 @@ function drawBoard() {
           color: fg_color,
         });
       }
-      let die_at = game_state.freeDieAt([xx, yy]);
+      let free_die_at = game_state.freeDieAt([xx, yy]);
+      let die_at = game_state.dieAt([xx, yy]);
       let err;
       let used = cell.used_idx === turn_idx;
       let cell_selectable = any_selected && faceMatch(eff_type.need_face, dice[selected_die].getFace()) &&
         (!eff_type.check || !(err = eff_type.check(game_state, cell))) && die_at === -1 && !used;
-      let die_selectable = die_at !== -1; // && (!any_selected || selected_die === die_at);
+      let die_selectable = free_die_at !== -1; // && (!any_selected || selected_die === free_die_at);
       if (build_mode) {
         cell_selectable = false;
         die_selectable = false;
@@ -1528,6 +1803,7 @@ function drawBoard() {
       let x = x0 + xx * CELLDIM;
       let y = y0 + yy * CELLDIM;
       let spot_ret = spot({
+        key: `cell${xx}_${yy}`,
         x: x + 1, y: y + 1, w: CELLDIM - 1, h: CELLDIM - 1,
         def: (cell_selectable || die_selectable) ? SPOT_DEFAULT_BUTTON : SPOT_DEFAULT_BUTTON_DISABLED,
         disabled_focusable: false,
@@ -1542,11 +1818,11 @@ function drawBoard() {
           }
         } else {
           assert(die_selectable);
-          game_state.selectDie(die_at);
+          game_state.selectDie(free_die_at);
         }
       }
       if (die_selectable) {
-        dice[die_at].focused = focused;
+        dice[free_die_at].focused = focused;
         focused = false;
       }
       // draw cell graphics
@@ -1628,7 +1904,8 @@ function drawBoard() {
       }
       // Draw available die face
       let draw_need_face = eff_type.need_face;
-      let draw_dice_face = !used && draw_need_face !== undefined && !eff_type.hide_face;
+      let draw_dice_face = !cell.completed && !used && draw_need_face !== undefined &&
+        (!eff_type.hide_face || cell_selectable);
       if (build_mode) {
         draw_dice_face = cell_selectable || !cell.explored;
         if (cell_selectable) {
@@ -1659,7 +1936,8 @@ function drawBoard() {
           color,
         });
       }
-      if (cell.explored && cell.progress_max) {
+      // Draw progress
+      if (!cell.completed && cell.explored && cell.progress_max) {
         drawProgress(x, y, cell, title_color);
       }
     }
@@ -1771,10 +2049,12 @@ function statePlay(dt) {
 
   doScroll();
 
+  if (engine.DEBUG && keyDownEdge(KEYS.R)) {
+    level_def.seed = `${Math.random()}`;
+    game_state = new GameState(level_def);
+  }
+
   game_state.tick(dt);
-  drawBoard();
-  drawFloaters();
-  drawDice();
 
   let button_w = 200;
   let disabled = Boolean(game_state.prompt || game_state.animation);
@@ -1798,6 +2078,10 @@ function statePlay(dt) {
       game_state.nextTurn();
     }
   }
+
+  drawBoard();
+  drawFloaters();
+  drawDice();
 }
 
 export function main() {

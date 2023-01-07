@@ -75,12 +75,12 @@ Dice Settlers
     * Goal of a particular amount of money (something to buy in the shop to win the game)
 
 * TODO Next
-  * foraging
-  * end condition
   * remaining buildings
 
 * Polish:
+  * explorer icon: telescope or binocs
   * do not allow combining last two dice!
+  * only allow foraging in ruins? ("raid") leads to stuck game state, though?
   * Undo non-random placements = kitchen / cuddle / upgrade, just hold the die without using them until both sides are full; similar undo on Port if no purchase made, but shop might have random stuff?
   * tooltips
     * showing dice faces
@@ -92,5 +92,11 @@ Dice Settlers
 
 * Balance
   * Crops: 3+ actions, 14+ levels => 8 crops
+  * Seeds: cost 5 crops
   * Gather: 1 action, level === wood/stone
-  * Forage:
+  * Forage: 32 level 1 forages (diminishing returns at higher levels) =
+    4 crops
+    2 seeds (value=5)
+    1 money
+    12 stone
+    13 wood
