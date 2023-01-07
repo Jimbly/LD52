@@ -22,7 +22,7 @@ import * as ui from 'glov/client/ui.js';
 import { LINE_ALIGN, drawLine, drawRect } from 'glov/client/ui.js';
 import { mashString, randCreate } from 'glov/common/rand_alea';
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-import { clamp, easeIn, easeInOut, easeOut, lerp, ridx } from 'glov/common/util';
+import { clamp, easeIn, easeInOut, easeOut, identity, lerp, ridx } from 'glov/common/util';
 import { v2copy, v2lerp, v2same, v3copy, v3lerp, vec2, vec4 } from 'glov/common/vmath';
 
 const { floor, min, round, PI } = Math;
@@ -283,6 +283,32 @@ const CELL_TYPES = [{
   action: 'Sell',
   indoors: true,
   need_face: Face.Trade,
+  check: function (game_state, cell) {
+    if (!game_state.crop) {
+      return 'Needs\ncrops';
+    }
+    return null;
+  },
+  tick: function (game_state, cell) {
+    cell.progress_max = game_state.crop;
+  },
+  activate: function (game_state, cell, die) {
+    let { prog } = cell.doProgress(game_state, die, true);
+    game_state.resourceMod(cell, 'crop', -prog);
+    game_state.resourceMod(cell, 'money', prog);
+    cell.just_advanced = prog / cell.progress_max;
+    cell.last_progress_max = cell.progress_max;
+    cell.progress = 0;
+    // if (advanced) {
+    //   game_state.addFloater({
+    //     pos: cell.pos,
+    //     // eslint-disable-next-line @typescript-eslint/no-invalid-this
+    //     text: `${this.label} Cleared!`,
+    //   });
+    //   cell.type = CellType.Meadow;
+    //   cell.init(game_state);
+    // }
+  },
 }, {
   name: 'TownBuy',
   label: 'Market',
@@ -333,7 +359,7 @@ const CELL_TYPES = [{
   check: function (game_state, cell) {
     if (cell.crop_stage === 0 && cell.progress === 0) {
       if (!game_state.seeds) {
-        return 'Need\nseeds';
+        return 'Needs\nseeds';
       }
     }
     return null;
@@ -343,7 +369,7 @@ const CELL_TYPES = [{
     let { advanced, floaters } = cell.doProgress(game_state, die, false);
     if (advanced) {
       cell.crop_stage++;
-      cell.just_advanced = true;
+      cell.just_advanced = 1;
       cell.last_progress_max = cell.progress_max;
       cell.progress = 0;
       if (cell.crop_stage === 1) {
@@ -589,7 +615,7 @@ class Die {
     this.faces = [Face.Explore, Face.Farm, Face.Farm, Face.Gather, Face.Build, Face.Trade].map(newFace);
     this.pos = [pos[0],pos[1]];
     this.bedroom = [pos[0],pos[1]];
-    this.cur_face = 1;
+    this.cur_face = 0;
     this.lerp_to = null;
     this.lerp_t = 0;
     this.used = false;
@@ -627,6 +653,7 @@ class GameState {
       [6,6],
     ].forEach((pos) => {
       let die = new Die(pos);
+      die.cur_face = this.rand.range(6);
       this.dice.push(die);
       this.setInitialCell(pos, CellType.Bedroom);
     });
@@ -665,6 +692,11 @@ class GameState {
       //   this.selectDie(1);
       //   this.activateCell([6,5]);
       // }, 500);
+      // Sell test
+      this.crop = 11;
+      this.dice[0].cur_face = 5;
+      this.selectDie(0);
+      this.activateCell([10,5]);
     }
   }
   lazyInterpReset(key, value) {
@@ -890,6 +922,16 @@ class GameState {
       this.prompt(dt);
       eatAllInput();
     }
+
+    let { board } = this;
+    for (let ii = 0; ii < board.length; ++ii) {
+      let row = board[ii];
+      for (let jj = 0; jj < row.length; ++jj) {
+        let cell = row[jj];
+        let eff_type = cell.getEffType();
+        eff_type.tick?.(this, cell);
+      }
+    }
   }
 }
 
@@ -956,10 +998,10 @@ function drawProgress(x, y, cell, color) {
   z+=0.1;
   let w = x1 - x0;
   let pmax = cell.just_advanced ? cell.last_progress_max : cell.progress_max;
-  let desired_progress = cell.just_advanced ? 1 : cell.progress / cell.progress_max;
+  let desired_progress = cell.just_advanced ? cell.just_advanced : cell.progress / cell.progress_max;
   let interp_progress = game_state.lazyInterp(`dp_${x}_${y}`,
     desired_progress, 200, easeInOut);
-  if (cell.just_advanced && interp_progress === 1) {
+  if (cell.just_advanced && interp_progress === cell.just_advanced) {
     cell.just_advanced = false;
     game_state.lazyInterpReset(`dp_${x}_${y}`, 0);
   }
@@ -1098,13 +1140,14 @@ function drawBoard() {
       // Draw currency amount
       if (eff_type.currency) {
         let value = game_state[eff_type.currency];
+        let eff_value = round(game_state.lazyInterp(`cur_${eff_type.currency}`, value, 500, identity));
         font.draw({
           x: x + 1, y: y - 2, z: Z.CELLS+1,
           w: CELLDIM, h: CELLDIM,
           align: font.ALIGN.HCENTER | font.ALIGN.HWRAP | font.ALIGN.VBOTTOM,
           style: font_style_currency,
           size: ui.font_height * 2,
-          text: `${value}`,
+          text: `${eff_value}`,
         });
       }
       // Draw available die face
