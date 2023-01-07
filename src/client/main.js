@@ -107,12 +107,13 @@ const CELL_TYPES = [{
   label: '?',
   indoors: false,
   need_face: Face.Explore,
-  activate: function (game_state, cell) {
+  activate: function (game_state, cell, die) {
     game_state.addFloater({
       pos: cell.pos,
       text: 'Explored!',
     });
-    cell.explored = true;
+    cell.doProgress(game_state, die, true);
+    game_state.setExplored(cell.pos);
   },
 }, {
   name: 'Meadow',
@@ -128,7 +129,10 @@ const CELL_TYPES = [{
   name: 'Forest',
   label: 'Forest',
   action: 'Gather',
+  gather_currency: 'wood',
   init: resourceInit,
+  // eslint-disable-next-line @typescript-eslint/no-use-before-define
+  activate: resourceActivate,
   indoors: false,
   need_face: Face.Gather,
   show_resources: true,
@@ -136,7 +140,10 @@ const CELL_TYPES = [{
   name: 'Quarry',
   label: 'Quarry',
   action: 'Gather',
+  gather_currency: 'stone',
   init: resourceInit,
+  // eslint-disable-next-line @typescript-eslint/no-use-before-define
+  activate: resourceActivate,
   indoors: false,
   need_face: Face.Gather,
   show_resources: true,
@@ -209,7 +216,7 @@ const CELL_TYPES = [{
   },
   activate: function (game_state, cell, die) {
     let dec_seeds = cell.crop_stage === 0 && cell.progress === 0;
-    let [advanced, floaters] = cell.doProgress(game_state, die);
+    let { advanced, floaters } = cell.doProgress(game_state, die, false);
     if (advanced) {
       cell.crop_stage++;
       cell.just_advanced = true;
@@ -233,7 +240,7 @@ const CELL_TYPES = [{
           text: 'Harvested!',
         });
         game_state.resourceMod(cell, 'crop', CROPS_PER_HARVEST);
-        this.init(game_state, cell);
+        cell.init(game_state);
       }
     }
     if (dec_seeds) {
@@ -336,6 +343,26 @@ CELL_TYPES.forEach((a, idx) => {
   a.type_id = idx;
 });
 
+function resourceActivate(game_state, cell, die) {
+  cell.progress = 0;
+  cell.progress_max = cell.resources;
+  let { advanced, prog } = cell.doProgress(game_state, die, true);
+  // eslint-disable-next-line @typescript-eslint/no-invalid-this
+  let { gather_currency } = this;
+  game_state.resourceMod(cell, gather_currency, prog);
+  cell.resources -= prog;
+  cell.progress = cell.progress_max = 0;
+  if (advanced) {
+    game_state.addFloater({
+      pos: cell.pos,
+      // eslint-disable-next-line @typescript-eslint/no-invalid-this
+      text: `${this.label} Cleared!`,
+    });
+    cell.type = CellType.Meadow;
+    cell.init(game_state);
+  }
+}
+
 const MAX_LEVEL = 8;
 function xpForNextLevel(level) {
   return level * level;
@@ -358,8 +385,15 @@ class Cell {
     return CELL_TYPES[this.explored ? this.type : CellType.Unexplored];
   }
 
-  doProgress(game_state, die) {
-    let left = this.progress_max - this.progress;
+  init(game_state) {
+    this.progress = 0;
+    this.progress_max = 0;
+    CELL_TYPES[this.type].init?.(game_state, this);
+  }
+
+  doProgress(game_state, die, add_floaters) {
+    let progress_max = this.progress_max || 1;
+    let left = progress_max - this.progress;
     let face_state = die.getFaceState();
     let prog = min(left, face_state.level);
     this.progress += prog;
@@ -380,7 +414,14 @@ class Cell {
         });
       }
     }
-    return [this.progress === this.progress_max, floaters];
+    if (add_floaters) {
+      floaters.forEach((f) => game_state.addFloater(f));
+    }
+    return {
+      advanced: this.progress === progress_max,
+      floaters,
+      prog,
+    };
   }
 }
 
@@ -389,7 +430,7 @@ class FaceState {
     this.type = type;
     this.level = 1;
     if (engine.DEBUG) {
-      //this.level = 8;
+      this.level = 8;
     }
     this.xp = 0;
     this.xp_next = xpForNextLevel(this.level);
@@ -571,12 +612,14 @@ class GameState {
     return false;
   }
   setExplored(pos) {
-    this.board[pos[1]][pos[0]].explored = true;
+    let cell = this.board[pos[1]][pos[0]];
+    cell.explored = true;
+    cell.init(this);
   }
   setCell(pos, type) {
     let cell = this.board[pos[1]][pos[0]];
     cell.type = type;
-    CELL_TYPES[type].init?.(this, cell);
+    cell.init(this);
   }
   setInitialCell(pos, type) {
     this.setCell(pos, type);
@@ -655,7 +698,7 @@ class GameState {
 
   resourceMod(cell, resource, delta) {
     let text = `${delta > 0 ? '+' : ''}${delta} ${resource}`;
-    if (delta !== 1 && delta !== -1 && !resource.endsWith('s')) {
+    if (delta !== 1 && delta !== -1 && resource === 'crop') {
       text += 's';
     }
     let pos = cell.pos;
