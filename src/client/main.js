@@ -16,6 +16,7 @@ import {
   keyDownEdge,
 } from 'glov/client/input.js';
 import * as net from 'glov/client/net.js';
+import { scrollAreaCreate } from 'glov/client/scroll_area';
 import {
   SPOT_DEFAULT_BUTTON,
   SPOT_DEFAULT_BUTTON_DISABLED,
@@ -726,17 +727,15 @@ const CELL_TYPES = [{
     });
   },
 }, {
-  name: 'Replace',
+  name: 'ReplaceLeft',
   label: 'Library',
   action: 'Replace',
   indoors: true,
+  wide: true,
   need_face: Face.Any,
 }, {
-  name: 'Entertain',
-  label: 'Parlor',
-  action: 'Sing',
+  name: 'ReplaceRight',
   indoors: true,
-  need_face: Face.Entertain,
 }, {
   name: 'StorageWood',
   indoors: false,
@@ -873,6 +872,12 @@ const CELL_TYPES = [{
   need_face: Face.Any,
   init: temple2Init,
   activate: temple2Activate,
+}, {
+  name: 'Entertain',
+  label: 'Parlor',
+  action: 'Sing',
+  indoors: true,
+  need_face: Face.Entertain,
 }];
 const CellType = {};
 CELL_TYPES.forEach((a, idx) => {
@@ -901,6 +906,11 @@ function studyCost(count) {
 function rerollCost(count) {
   let v = pow(2, (count || 0) + 1);
   return [1, v, 4];
+}
+
+function libraryCost(count) {
+  let v = pow(2, (count || 0) + 1);
+  return [v, 0, 2];
 }
 
 function buildPlace(game_state, cell, die, entry) {
@@ -949,7 +959,15 @@ function buildPlace(game_state, cell, die, entry) {
   };
 }
 
+let build_scroll;
+
 function buildActivate(game_state, cell, die) {
+  if (!build_scroll) {
+    build_scroll = scrollAreaCreate({
+      background_color: null,
+      z: Z.PROMPT,
+    });
+  }
   let counts = {};
   let { board } = game_state;
   board.forEach((row) => {
@@ -977,10 +995,14 @@ function buildActivate(game_state, cell, die) {
     cell_type: CellType.Reroll,
     desc: 'Reroll one die per turn',
     cost: rerollCost(counts[CellType.Reroll]),
+  }, {
+    cell_type: CellType.ReplaceLeft,
+    desc: 'Store and apply new a new face',
+    cost: libraryCost(counts[CellType.Reroll]),
   }];
   const SHOP_H = CELLDIM;
-  const PROMPT_H = PROMPT_PAD * 5 + ui.font_height + ui.button_height + 26 +
-    shop_entries.length * SHOP_H;
+  const PROMPT_H = 480 - 2;
+  const PROMPT_SCROLL_H = PROMPT_H - PROMPT_PAD * 3 - ui.button_height - CELLDIM + 10;
   const PROMPT_W = 480;
   let z = Z.PROMPT;
   game_state.prompt = function () {
@@ -1001,6 +1023,16 @@ function buildActivate(game_state, cell, die) {
       text: 'Start building what?\nRequires empty Meadow(s)',
     });
     y += ui.font_height + PROMPT_PAD + 26;
+    let scroll_param = {
+      x: x0 + 2,
+      y,
+      w: PROMPT_W - 4,
+      h: PROMPT_SCROLL_H,
+    };
+    build_scroll.begin(scroll_param);
+    let x0_save = x0;
+    y = 0;
+    x0 = 0;
     let done = false;
     for (let ii = 0; ii < shop_entries.length; ++ii) {
       let entry = shop_entries[ii];
@@ -1114,6 +1146,9 @@ function buildActivate(game_state, cell, die) {
 
       y += SHOP_H;
     }
+    build_scroll.end(y);
+    x0 = x0_save;
+    y = scroll_param.y + scroll_param.h;
     y += PROMPT_PAD;
     if (!done && ui.buttonText({
       text: 'Cancel',
@@ -1711,11 +1746,19 @@ class GameState {
       }
     }
 
+    let eat_input = false;
     if (this.prompt) {
       this.prompt(dt);
       if (!this.build_mode) {
-        eatAllInput();
+        eat_input = true;
       }
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-use-before-define
+    doScroll();
+
+    if (eat_input) {
+      eatAllInput();
     }
 
     let { board } = this;
@@ -2124,8 +2167,6 @@ function doScroll() {
 function statePlay(dt) {
   camera2d.setAspectFixed(game_width, game_height);
   gl.clearColor(bg_color[0], bg_color[1], bg_color[2], 0);
-
-  doScroll();
 
   if (engine.DEBUG && keyDownEdge(KEYS.R)) {
     level_def.seed = `${Math.random()}`;
