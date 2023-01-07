@@ -222,6 +222,11 @@ export let tooltip_pad = 8;
 export let font_style_normal = glov_font.styleColored(null, 0x000000ff);
 export let font_style_focused = glov_font.style(font_style_normal, {});
 
+export function setFontStyles(normal, focused) {
+  font_style_normal = normal;
+  font_style_focused = focused || glov_font.style(normal, {});
+}
+
 export let font;
 export let title_font;
 export const sprites = {};

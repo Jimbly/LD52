@@ -65,6 +65,10 @@ const font_style_currency = fontStyle(null, {
 const font_style_floater = fontStyle(font_style_currency, {
 });
 
+const font_style_normal = fontStyle(null, {
+  color: fg_color_font,
+});
+
 let sprites = {};
 let font;
 
@@ -1105,6 +1109,10 @@ export function main() {
     font = { info: font_info_palanquin32, texture: 'font/palanquin32' };
   }
 
+  ui_sprites.button.ws = [24,16,24];
+  ui_sprites.button.hs = [24];
+  ui_sprites.button_rollover = { name: 'pixely/button_over', ws: [24,16,24], hs: [24] };
+
   if (!engine.startup({
     game_width,
     game_height,
@@ -1120,6 +1128,7 @@ export function main() {
   }
   font = engine.font;
 
+  ui.setFontStyles(font_style_normal);
   ui.scaleSizes(24 / 32);
   ui.setFontHeight(16);
 

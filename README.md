@@ -87,8 +87,6 @@ Dice Settlers
     * Buy / Sell: Choose stuff
 
 * Polish:
-  * TODO: floaters
-  * monochrome button (look like wood / nails in corners?)
   * Undo non-random placements = kitchen / cuddle / upgrade, just hold the die without using them until both sides are full; similar undo on Port if no purchase made, but shop might have random stuff?
   * tooltips
     * showing dice faces
@@ -96,7 +94,7 @@ Dice Settlers
   * Active dice pulse glowing
   * shift click or double-tap a slot if auto-assignable die
   * vignette
-  * background behind active dice should match actual bg_color (easiest: dual tint?  just hard-code when done?)
+  * background behind active dice/buttons should match actual bg_color (easiest: dual tint?  just hard-code when done?)
 
 * Balance
   * Crops: 3+ actions, 14+ levels => 8 crops
