@@ -146,11 +146,15 @@ export function setAspectFixed(w, h) {
     inv_desired_aspect = 1 / screenAspect();
   }
   if (inv_aspect > inv_desired_aspect) {
-    let margin = Math.floor((h / pa / inv_desired_aspect - w) / 2);
-    set(-margin, 0, w + margin, h, false);
+    let margin = Math.round((h / pa / inv_desired_aspect - w));
+    let left_margin = Math.floor(margin/2);
+    let right_margin = margin - left_margin;
+    set(-left_margin, 0, w + right_margin, h, false);
   } else {
-    let margin = Math.floor((w * pa * inv_desired_aspect - h) / 2);
-    set(0, -margin, w, h + margin, false);
+    let margin = Math.round((w * pa * inv_desired_aspect - h));
+    let top_margin = Math.floor(margin / 2);
+    let bot_margin = margin - top_margin;
+    set(0, -top_margin, w, h + bot_margin, false);
   }
 }
 
