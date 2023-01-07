@@ -25,7 +25,7 @@ import { mashString, randCreate } from 'glov/common/rand_alea';
 import { clamp, easeIn, easeInOut, easeOut, identity, lerp, ridx } from 'glov/common/util';
 import { v2copy, v2lerp, v2same, v3copy, v3lerp, vec2, vec4 } from 'glov/common/vmath';
 
-const { floor, min, round, PI } = Math;
+const { floor, min, pow, round, PI } = Math;
 
 // Balance Notes
 //   * Crops: 3+ actions, 14+ levels => 8 crops
@@ -239,7 +239,7 @@ function drawCurrency(game_state, currency, x, y, z) {
   font.draw({
     x: x + 1, y: y - 2, z: z+1,
     w: CELLDIM, h: CELLDIM,
-    align: font.ALIGN.HCENTER | font.ALIGN.VBOTTOM,
+    align: font.ALIGN.HCENTERFIT | font.ALIGN.VBOTTOM,
     style: font_style_currency,
     size: ui.font_height * 2,
     text: `${eff_value}`,
@@ -428,6 +428,8 @@ const CELL_TYPES = [{
   action: 'Build',
   indoors: false,
   need_face: Face.Build,
+  // eslint-disable-next-line @typescript-eslint/no-use-before-define
+  activate: buildActivate,
 }, {
   name: 'TownSell',
   label: 'Port',
@@ -481,8 +483,8 @@ const CELL_TYPES = [{
     cell.crop_stage = 0;
     cell.progress_max = TICKS_SOW;
   },
-  label: function (game_stae, cell) {
-    if (cell.crop_stage === 0) {
+  label: function (game_state, cell) {
+    if (!cell || cell.crop_stage === 0) {
       return 'Field';
     } else if (cell.crop_stage === 1) {
       return 'Sprout';
@@ -664,6 +666,237 @@ CURRENCY_TO_FRAME = {
   crop: CellType.StorageCrop,
 };
 
+function bedroomCost(count) {
+  let v = pow(4, (count - 1));
+  return [v, 2, 0];
+}
+
+function buildPlace(game_state, cell, die, entry) {
+  let { cell_type } = entry;
+  let type_data = CELL_TYPES[cell_type];
+  entry.wide = type_data.wide;
+  let label = type_data.label;
+  if (typeof label === 'function') {
+    label = label(game_state, null);
+  }
+  const PROMPT_H = PROMPT_PAD * 2 + ui.button_height;
+  const PROMPT_W = 480;
+  let z = Z.PROMPT;
+  game_state.build_mode = {
+    cell,
+    die,
+    entry,
+  };
+  game_state.prompt = function () {
+    let w = PROMPT_W;
+    let y0 = camera2d.y1() - PROMPT_H;
+    let x0 = round(camera2d.x0() + (camera2d.w() - w) / 2);
+    let y = y0 + PROMPT_PAD;
+    font.draw({
+      style: font_style_normal,
+      x: x0 + PROMPT_PAD, y: y + (ui.button_height - ui.font_height)/2,
+      z, w: w - ui.button_width - PROMPT_PAD*2, align: font.ALIGN.HCENTER,
+      text: `Build ${label} where?`,
+    });
+    if (ui.buttonText({
+      text: 'Back',
+      x: x0 + w - ui.button_width - PROMPT_PAD,
+      y, z,
+    })) {
+      game_state.build_mode = null;
+      // eslint-disable-next-line @typescript-eslint/no-use-before-define
+      buildActivate(game_state, cell, die);
+    }
+    ui.panel({
+      x: x0,
+      y: y0,
+      w,
+      h: PROMPT_H,
+      z: z - 1,
+    });
+  };
+}
+
+function buildActivate(game_state, cell, die) {
+  let counts = {};
+  let { board } = game_state;
+  board.forEach((row) => {
+    row.forEach((cell2) => {
+      counts[cell2.type] = (counts[cell2.type] || 0) + 1;
+    });
+  });
+  let shop_entries = [{
+    cell_type: CellType.Bedroom,
+    desc: 'Room for one more die',
+    cost: bedroomCost(counts[CellType.Bedroom]),
+  }, {
+    cell_type: CellType.KitchenLeft,
+    desc: 'Spend one die to reassign another',
+    cost: [4,6,2],
+  }, {
+    cell_type: CellType.Crop,
+    desc: 'Plant seeds to grow crops',
+    cost: [5,1,0],
+  }];
+  const SHOP_H = CELLDIM;
+  const PROMPT_H = PROMPT_PAD * 5 + ui.font_height + ui.button_height + 26 +
+    shop_entries.length * SHOP_H;
+  const PROMPT_W = 480;
+  let z = Z.PROMPT;
+  game_state.prompt = function () {
+    let w = PROMPT_W;
+    let y0 = camera2d.y1() - PROMPT_H;
+    let x0 = round(camera2d.x0() + (camera2d.w() - w) / 2);
+    let y = y0 + PROMPT_PAD;
+    // draw current currencies in corner
+    let x_money = x0 + w - PROMPT_PAD - CELLDIM;
+    let x_stone = x_money - PROMPT_PAD - CELLDIM;
+    let x_wood = x_stone - PROMPT_PAD - CELLDIM;
+    drawCurrency(game_state, 'wood', x_wood, y - PROMPT_PAD, z);
+    drawCurrency(game_state, 'stone', x_stone, y - PROMPT_PAD, z);
+    drawCurrency(game_state, 'money', x_money, y - PROMPT_PAD, z);
+    font.draw({
+      style: font_style_normal,
+      x: x0 + PROMPT_PAD, y: y + PROMPT_PAD, z, w, align: font.ALIGN.HWRAP,
+      text: 'Start building what?\nRequires empty Meadow(s)',
+    });
+    y += ui.font_height + PROMPT_PAD + 26;
+    let done = false;
+    for (let ii = 0; ii < shop_entries.length; ++ii) {
+      let entry = shop_entries[ii];
+      let { cell_type, cost, desc } = entry;
+      let type_data = CELL_TYPES[cell_type];
+      let x = x0 + PROMPT_PAD;
+      let x_icon = x;
+
+      let disabled = done;
+      disabled = disabled || game_state.wood < cost[0];
+      font.draw({
+        x: x_wood, y, z, w: CELLDIM, h: SHOP_H,
+        align: font.ALIGN.HVCENTER,
+        size: ui.font_height * 2,
+        style: game_state.wood < cost[0] ? font_style_disabled : font_style_normal,
+        text: `${cost[0]}`
+      });
+
+      disabled = disabled || game_state.stone < cost[1];
+      font.draw({
+        x: x_stone, y, z, w: CELLDIM, h: SHOP_H,
+        align: font.ALIGN.HVCENTER,
+        size: ui.font_height * 2,
+        style: game_state.stone < cost[1] ? font_style_disabled : font_style_normal,
+        text: `${cost[1]}`
+      });
+
+      disabled = disabled || game_state.money < cost[2];
+      font.draw({
+        x: x_money, y, z, w: CELLDIM, h: SHOP_H,
+        align: font.ALIGN.HVCENTER,
+        size: ui.font_height * 2,
+        style: game_state.money < cost[2] ? font_style_disabled : font_style_normal,
+        text: `${cost[2]}`
+      });
+
+      let text = type_data.label;
+      if (typeof text === 'function') {
+        text = text(game_state, null);
+      }
+      font.draw({
+        x: x + 1, y, z: z + 1,
+        w: CELLDIM*2,
+        align: font.ALIGN.HCENTER,
+        style: disabled ? font_style_disabled : font_style_normal,
+        text: `${text.toUpperCase()} #${counts[cell_type] + 1}`,
+      });
+      x += CELLDIM*2;
+
+      font.draw({
+        x, y, z, w: x_wood - x, h: SHOP_H,
+        align: font.ALIGN.HVCENTER|font.ALIGN.HWRAP,
+        style: disabled ? font_style_disabled : font_style_normal,
+        text: desc || '?',
+      });
+
+      let spot_ret = spot({
+        x: x0, y, w: PROMPT_W, h: SHOP_H,
+        def: disabled ? SPOT_DEFAULT_BUTTON_DISABLED : SPOT_DEFAULT_BUTTON,
+      });
+      let { focused, ret } = spot_ret;
+      if (focused) {
+        ui.drawRect(x0 + 4, y, x0 + PROMPT_W - 4, y + SHOP_H - 1, z-0.50, fg_color);
+        ui.drawRect(x0 + 5, y+1, x0 + PROMPT_W - 5, y + SHOP_H - 2, z-0.45, bg_color);
+      }
+
+      let cell_pos = {
+        x: x_icon + (type_data.wide ? 0 : CELLDIM/2), y, z,
+        color: fg_color,
+      };
+      sprites.cells.draw({
+        ...cell_pos,
+        frame: cell_type,
+      });
+      if (focused) {
+        sprites.faces.draw({
+          ...cell_pos,
+          z: z + 1,
+          frame: 10,
+        });
+        sprites.faces.draw({
+          ...cell_pos,
+          z: z + 2,
+          frame: type_data.need_face,
+        });
+      }
+      if (type_data.wide) {
+        cell_pos.x = x_icon + CELLDIM;
+        sprites.cells.draw({
+          ...cell_pos,
+          frame: cell_type+1,
+        });
+        if (focused) {
+          sprites.faces.draw({
+            ...cell_pos,
+            z: z + 1,
+            frame: 10,
+          });
+          sprites.faces.draw({
+            ...cell_pos,
+            z: z + 2,
+            frame: type_data.need_face,
+          });
+        }
+      }
+
+      if (ret && !done) {
+        done = true;
+        buildPlace(game_state, cell, die, entry);
+      }
+
+      y += SHOP_H;
+    }
+    y += PROMPT_PAD;
+    if (!done && ui.buttonText({
+      text: 'Cancel',
+      x: x0 + w - ui.button_width - PROMPT_PAD,
+      y, z,
+    })) {
+      cell.used_idx = -1;
+      die.used = false;
+      game_state.selected_die = game_state.dice.indexOf(die);
+      assert.equal(game_state.dice[game_state.selected_die], die);
+      game_state.activateCell(die.bedroom);
+      game_state.prompt = null;
+    }
+    ui.panel({
+      x: x0,
+      y: y0,
+      w,
+      h: PROMPT_H,
+      z: z - 1,
+    });
+  };
+}
+
 
 function resourceActivate(game_state, cell, die) {
   cell.progress = 0;
@@ -828,6 +1061,7 @@ class GameState {
     ].forEach((pair) => {
       this.setInitialCell(pair, pair[2]);
     });
+    this.build_mode = null;
     this.selected_die = null;
     this.prompt = null;
     this.animation = null;
@@ -852,10 +1086,19 @@ class GameState {
       // this.activateCell([10,5]);
 
       // Buy test
-      this.money = 25;
-      this.dice[0].cur_face = 5;
+      // this.money = 25;
+      // this.dice[0].cur_face = 5;
+      // this.selectDie(0);
+      // this.activateCell([9,5]);
+
+      // Build test
+      this.wood = 4;
+      this.stone = 10;
+      this.money = 10;
+      this.dice[0].cur_face = 4;
       this.selectDie(0);
-      this.activateCell([9,5]);
+      this.activateCell([5,4]);
+      this.setExplored([7,7]);
     }
   }
   lazyInterpReset(key, value) {
@@ -1061,6 +1304,29 @@ class GameState {
     this[resource] += delta;
   }
 
+  finishBuild(pos) {
+    let cell = this.getCell(pos);
+    let { entry } = this.build_mode;
+    let { cost, wide, cell_type } = entry;
+    if (cost[0]) {
+      this.resourceMod(cell, 'wood', -cost[0]);
+    }
+    if (cost[1]) {
+      this.resourceMod(cell, 'stone', -cost[1]);
+    }
+    if (cost[2]) {
+      this.resourceMod(cell, 'money', -cost[2]);
+    }
+
+    this.setCell(pos, cell_type);
+    if (wide) {
+      this.setCell([pos[0]+1, pos[1]], cell_type + 1);
+    }
+
+    this.prompt = null;
+    this.build_mode = null;
+  }
+
   tick(dt) {
     this.floater_idx = 0;
     if (this.animation) {
@@ -1079,7 +1345,9 @@ class GameState {
 
     if (this.prompt) {
       this.prompt(dt);
-      eatAllInput();
+      if (!this.build_mode) {
+        eatAllInput();
+      }
     }
 
     let { board } = this;
@@ -1178,7 +1446,7 @@ function drawProgress(x, y, cell, color) {
 }
 
 function drawBoard() {
-  let { board, w, h, selected_die, dice, turn_idx } = game_state;
+  let { board, w, h, selected_die, dice, turn_idx, build_mode } = game_state;
   let any_selected = selected_die !== null;
   let [x0, y0] = view_origin;
   for (let yy = 0; yy < h; ++yy) {
@@ -1224,6 +1492,20 @@ function drawBoard() {
       let cell_selectable = any_selected && faceMatch(eff_type.need_face, dice[selected_die].getFace()) &&
         (!eff_type.check || !(err = eff_type.check(game_state, cell))) && die_at === -1 && !used;
       let die_selectable = die_at !== -1; // && (!any_selected || selected_die === die_at);
+      if (build_mode) {
+        cell_selectable = false;
+        die_selectable = false;
+        if (cell.explored && cell.type === CellType.Meadow) {
+          if (build_mode.entry.wide) {
+            let cell_right = game_state.getCell([xx+1, yy]);
+            if (cell_right?.explored && cell_right.type === CellType.Meadow) {
+              cell_selectable = true;
+            }
+          } else {
+            cell_selectable = true;
+          }
+        }
+      }
       let frame = eff_type.type_id;
       let x = x0 + xx * CELLDIM;
       let y = y0 + yy * CELLDIM;
@@ -1235,7 +1517,11 @@ function drawBoard() {
       let { ret, focused } = spot_ret;
       if (ret) {
         if (cell_selectable) {
-          game_state.activateCell([xx, yy]);
+          if (build_mode) {
+            game_state.finishBuild([xx, yy]);
+          } else {
+            game_state.activateCell([xx, yy]);
+          }
         } else {
           assert(die_selectable);
           game_state.selectDie(die_at);
@@ -1249,7 +1535,7 @@ function drawBoard() {
       sprites.cells.draw({
         x, y, z: Z.CELLS,
         frame,
-        color: err ? fg_color_disabled : fg_color,
+        color: err || (build_mode && !cell_selectable) ? fg_color_disabled : fg_color,
       });
       // Draw header
       let text;
@@ -1264,6 +1550,14 @@ function drawBoard() {
       }
       let title_color_font = used ? fg_color_font_used : fg_color_font;
       let title_color = used ? fg_color_used : fg_color;
+      if (build_mode) {
+        if (!cell_selectable) {
+          title_color_font = fg_color_font_used;
+          title_color = fg_color_used;
+        } else {
+          text = 'BUILD';
+        }
+      }
       if (text) {
         let text_w = CELLDIM;
         if (eff_type.wide && !cell_selectable) {
@@ -1295,6 +1589,7 @@ function drawBoard() {
           w: CELLDIM, h: CELLDIM,
           align: font.ALIGN.HRIGHT | font.ALIGN.HWRAP | font.ALIGN.VBOTTOM,
           style: font_style_currency,
+          alpha: build_mode ? 0.5 : 1,
           size: ui.font_height,
           text: `${value}`,
         });
@@ -1306,15 +1601,27 @@ function drawBoard() {
         font.draw({
           x: x + 1, y: y - 2, z: Z.CELLS+1,
           w: CELLDIM, h: CELLDIM,
-          align: font.ALIGN.HCENTER | font.ALIGN.VBOTTOM,
+          align: font.ALIGN.HCENTERFIT | font.ALIGN.VBOTTOM,
           style: font_style_currency,
+          alpha: build_mode ? 0.5 : 1,
           size: ui.font_height * 2,
           text: `${eff_value}`,
         });
       }
       // Draw available die face
-      if (!used && eff_type.need_face !== undefined && !eff_type.hide_face) {
+      let draw_need_face = eff_type.need_face;
+      let draw_dice_face = !used && draw_need_face !== undefined && !eff_type.hide_face;
+      if (build_mode) {
+        draw_dice_face = cell_selectable || !cell.explored;
+        if (cell_selectable) {
+          draw_need_face = Face.Build;
+        }
+      }
+      if (draw_dice_face) {
         let color = any_selected && !cell_selectable ? fg_color_disabled : fg_color;
+        if (build_mode) {
+          color = cell_selectable ? fg_color : fg_color_disabled;
+        }
         // no dice in it at the moment
         sprites.faces.draw({
           x, y, z: Z.CELLS + 1,
@@ -1330,7 +1637,7 @@ function drawBoard() {
         }
         sprites.faces.draw({
           x, y, z: Z.CELLS + 2,
-          frame: eff_type.need_face,
+          frame: draw_need_face,
           color,
         });
       }
@@ -1376,10 +1683,13 @@ function drawFloaters() {
 let die_pos = vec2();
 function drawDice() {
   let [x0, y0] = view_origin;
-  let { dice, selected_die } = game_state;
+  let { dice, selected_die, build_mode } = game_state;
   for (let ii = 0; ii < dice.length; ++ii) {
     let z = Z.DICE;
     let die = dice[ii];
+    if (build_mode && build_mode.die !== die) {
+      continue;
+    }
     if (die.lerp_to) {
       v2lerp(die_pos, easeInOut(die.lerp_t, 2), die.pos, die.lerp_to);
       z += 5;
@@ -1453,6 +1763,7 @@ export function main() {
 
   ui_sprites.button.ws = [24,16,24];
   ui_sprites.button.hs = [24];
+  ui_sprites.button_down = { name: 'pixely/button_down', ws: [24,16,24], hs: [24] };
   ui_sprites.button_rollover = { name: 'pixely/button_over', ws: [24,16,24], hs: [24] };
   ui_sprites.panel = { name: 'panel_wood', ws: [12, 8, 12], hs: [11,2,11] };
   ui_sprites.color_set_shades = [1, 1, 0.5];
