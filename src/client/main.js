@@ -21,10 +21,19 @@ import * as ui from 'glov/client/ui.js';
 import { LINE_ALIGN, drawLine, drawRect } from 'glov/client/ui.js';
 import { mashString, randCreate } from 'glov/common/rand_alea';
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-import { clamp, easeIn, easeInOut, easeOut, lerp } from 'glov/common/util';
+import { clamp, easeIn, easeInOut, easeOut, lerp, ridx } from 'glov/common/util';
 import { v2copy, v2lerp, v2same, v3copy, v3lerp, vec2, vec4 } from 'glov/common/vmath';
 
 const { floor, min, round, PI } = Math;
+
+// Balance Notes
+//   * Crops: 3+ actions, 14+ levels => 8 crops
+//   * Gather: 1 action, level === wood/stone
+//   * Forage:
+const TICKS_SOW = 2;
+const TICKS_TEND = 8;
+const TICKS_HARVEST = 4;
+const CROPS_PER_HARVEST = 8;
 
 window.Z = window.Z || {};
 Z.BACKGROUND = 1;
@@ -32,6 +41,7 @@ Z.SEP = 10;
 Z.CELLS = 20;
 Z.DICE = 100;
 Z.SPRITES = 100;
+Z.FLOATERS = 200;
 
 // Virtual viewport for our game logic
 const game_width = 480;
@@ -50,6 +60,9 @@ const font_style_currency = fontStyle(null, {
   color: fg_color_font,
   outline_color: bg_color_font,
   outline_width: 3,
+});
+
+const font_style_floater = fontStyle(font_style_currency, {
 });
 
 let sprites = {};
@@ -95,7 +108,10 @@ const CELL_TYPES = [{
   indoors: false,
   need_face: Face.Explore,
   activate: function (game_state, cell) {
-    // TODO: floater 'Explored!'
+    game_state.addFloater({
+      pos: cell.pos,
+      text: 'Explored!',
+    });
     cell.explored = true;
   },
 }, {
@@ -163,7 +179,7 @@ const CELL_TYPES = [{
   name: 'Crop',
   init: function (game_state, cell) {
     cell.crop_stage = 0;
-    cell.progress_max = 2;
+    cell.progress_max = TICKS_SOW;
   },
   label: function (game_stae, cell) {
     if (cell.crop_stage === 0) {
@@ -192,11 +208,7 @@ const CELL_TYPES = [{
     return null;
   },
   activate: function (game_state, cell, die) {
-    if (cell.crop_stage === 0 && cell.progress === 0) {
-      // TODO: floater 'Planted!'
-      // TODO: floater -1 seed
-      game_state.seeds--;
-    }
+    let dec_seeds = cell.crop_stage === 0 && cell.progress === 0;
     cell.progress += die.level;
     if (cell.progress >= cell.progress_max) {
       cell.crop_stage++;
@@ -204,10 +216,34 @@ const CELL_TYPES = [{
       cell.last_progress_max = cell.progress_max;
       cell.progress = 0;
       if (cell.crop_stage === 1) {
-        cell.progress_max = 8;
+        game_state.addFloater({
+          pos: cell.pos,
+          text: 'Planted!',
+        });
+        cell.progress_max = TICKS_TEND;
+      } else if (cell.crop_stage === 2) {
+        game_state.addFloater({
+          pos: cell.pos,
+          text: 'Ready for harvest!',
+        });
+        cell.progress_max = TICKS_HARVEST;
       } else {
-        cell.progress_max = 4;
+        game_state.addFloater({
+          pos: cell.pos,
+          text: 'Harvested!',
+        });
+        game_state.resourceMod(cell, 'crop', CROPS_PER_HARVEST);
+        this.init(game_state, cell);
       }
+    }
+    if (dec_seeds) {
+      if (cell.crop_stage === 0) { // didn't finish
+        game_state.addFloater({
+          pos: cell.pos,
+          text: 'Planting started!',
+        });
+      }
+      game_state.resourceMod(cell, 'seeds', -1);
     }
   },
   indoors: false,
@@ -300,7 +336,8 @@ CELL_TYPES.forEach((a, idx) => {
 });
 
 class Cell {
-  constructor() {
+  constructor(x, y) {
+    this.pos = [x, y];
     this.type = CellType.Meadow;
     this.explored = false;
     this.indoors = false;
@@ -348,10 +385,13 @@ class GameState {
     this.h = h;
     this.board = [];
     this.interp_data = {};
-    for (let ii = 0; ii < h; ++ii) {
+    this.floaters = [];
+    this.floater_idx = 0;
+    this.resource_pos = {};
+    for (let yy = 0; yy < h; ++yy) {
       let row = [];
-      for (let jj = 0; jj < w; ++jj) {
-        row.push(new Cell());
+      for (let xx = 0; xx < w; ++xx) {
+        row.push(new Cell(xx, yy));
       }
       this.board.push(row);
     }
@@ -502,6 +542,10 @@ class GameState {
   setInitialCell(pos, type) {
     this.setCell(pos, type);
     this.setExplored(pos);
+    let { currency } = CELL_TYPES[type];
+    if (currency) {
+      this.resource_pos[currency] = pos;
+    }
   }
   selectDie(idx) {
     if (this.selected_die === idx) {
@@ -560,7 +604,31 @@ class GameState {
     return -1;
   }
 
+  addFloater(floater) {
+    floater.t = 0;
+    floater.idx = this.floater_idx++;
+    this.floaters.push(floater);
+  }
+
+  getResourcePos(resource) {
+    return this.resource_pos[resource];
+  }
+
+  resourceMod(cell, resource, delta) {
+    let text = `${delta > 0 ? '+' : ''}${delta} ${resource}`;
+    if (delta !== 1 && delta !== -1 && !resource.endsWith('s')) {
+      text += 's';
+    }
+    let pos = cell.pos;
+    this.addFloater({
+      pos,
+      text,
+    });
+    this[resource] += delta;
+  }
+
   tick(dt) {
+    this.floater_idx = 0;
     if (this.animation) {
       if (!this.animation.update(dt)) {
         this.animation = null;
@@ -815,6 +883,38 @@ function drawBoard() {
   }
 }
 
+const FLOATER_TIME = 1500;
+const FLOATER_YFLOAT = 64;
+const FLOATER_DELAY = 250;
+const FLOATER_FADE = 250;
+function drawFloaters() {
+  let [x0, y0] = view_origin;
+  let { floaters } = game_state;
+  for (let ii = floaters.length - 1; ii >= 0; --ii) {
+    let floater = floaters[ii];
+    floater.t += engine.frame_dt;
+    let t = floater.t;
+    t -= floater.idx * FLOATER_DELAY;
+    if (t <= 0) {
+      continue;
+    }
+    if (t > FLOATER_TIME) {
+      ridx(floaters, ii);
+      continue;
+    }
+    font.draw({
+      style: font_style_floater,
+      align: font.ALIGN.HCENTER,
+      x: x0 + (floater.pos[0] + 0.5) * CELLDIM,
+      y: y0 + (floater.pos[1] + 0.5) * CELLDIM - round(FLOATER_YFLOAT * easeOut(t / FLOATER_TIME, 2)) +
+        floater.idx * ui.font_height,
+      z: Z.FLOATERS + floater.idx,
+      alpha: clamp((FLOATER_TIME - t) / FLOATER_FADE, 0, 1),
+      text: floater.text
+    });
+  }
+}
+
 let die_pos = vec2();
 function drawDice() {
   let [x0, y0] = view_origin;
@@ -876,6 +976,7 @@ function statePlay(dt) {
 
   game_state.tick(dt);
   drawBoard();
+  drawFloaters();
   drawDice();
 
   let button_w = 200;
@@ -885,7 +986,7 @@ function statePlay(dt) {
     w: button_w,
     text: game_state.allDiceUsed() ? 'NEXT TURN' : 'Next Turn (Pass)',
   }) || keyDownEdge(KEYS.N) || keyDownEdge(KEYS.RETURN)) {
-    if (game_state.kitchenAvailable()) {
+    if (game_state.kitchenAvailable() && !engine.DEBUG) {
       ui.modalDialog({
         text: 'Hint: You can use any one die to PREP the Kitchen in order to ASSIGN any' +
           ' other die to any face.  Are you sure you wish to pass your turn?',
