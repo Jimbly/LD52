@@ -8,7 +8,13 @@ import { createAnimationSequencer } from 'glov/client/animation';
 import * as camera2d from 'glov/client/camera2d.js';
 import * as engine from 'glov/client/engine.js';
 import { fontStyle, intColorFromVec4Color } from 'glov/client/font';
-import { KEYS, eatAllInput, keyDownEdge } from 'glov/client/input.js';
+import {
+  KEYS,
+  drag,
+  eatAllInput,
+  keyDown,
+  keyDownEdge,
+} from 'glov/client/input.js';
 import * as net from 'glov/client/net.js';
 import {
   SPOT_DEFAULT_BUTTON,
@@ -23,9 +29,20 @@ import { LINE_ALIGN, drawLine, drawRect } from 'glov/client/ui.js';
 import { mashString, randCreate } from 'glov/common/rand_alea';
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { clamp, easeIn, easeInOut, easeOut, identity, lerp, ridx } from 'glov/common/util';
-import { v2copy, v2lerp, v2same, v3copy, v3lerp, vec2, vec4 } from 'glov/common/vmath';
+import {
+  v2add,
+  v2copy,
+  v2floor,
+  v2lerp,
+  v2same,
+  v2set,
+  v3copy,
+  v3lerp,
+  vec2,
+  vec4,
+} from 'glov/common/vmath';
 
-const { floor, min, pow, round, PI } = Math;
+const { floor, max, min, pow, round, PI } = Math;
 
 // Balance Notes
 //   * Crops: 3+ actions, 14+ levels => 8 crops
@@ -1092,13 +1109,13 @@ class GameState {
       // this.activateCell([9,5]);
 
       // Build test
-      this.wood = 4;
-      this.stone = 10;
-      this.money = 10;
-      this.dice[0].cur_face = 4;
-      this.selectDie(0);
-      this.activateCell([5,4]);
-      this.setExplored([7,7]);
+      // this.wood = 4;
+      // this.stone = 10;
+      // this.money = 10;
+      // this.dice[0].cur_face = 4;
+      // this.selectDie(0);
+      // this.activateCell([5,4]);
+      // this.setExplored([7,7]);
     }
   }
   lazyInterpReset(key, value) {
@@ -1364,7 +1381,8 @@ class GameState {
 
 
 let game_state;
-let view_origin;
+let view_origin = vec2();
+let view_origin_float = vec2();
 function init() {
   sprites.sep_vert = createSprite({
     name: 'sep_vert',
@@ -1385,10 +1403,10 @@ function init() {
     size: [CELLDIM, CELLDIM],
   });
   game_state = new GameState(level_def);
-  view_origin = [
-    floor(-(game_state.w * CELLDIM - game_width) / 2),
-    floor(-(game_state.h * CELLDIM - game_height) / 2),
-  ];
+  v2set(view_origin_float,
+    -(game_state.w * CELLDIM - game_width) / 2,
+    -(game_state.h * CELLDIM - game_height) / 2
+  );
   ({ font } = ui);
 }
 
@@ -1707,9 +1725,51 @@ function drawDice() {
   }
 }
 
+function getVisRange() {
+  let { board } = game_state;
+  let minx = Infinity;
+  let maxx = -Infinity;
+  let miny = Infinity;
+  let maxy = -Infinity;
+  for (let yy = 0; yy < board.length; ++yy) {
+    let row = board[yy];
+    for (let xx = 0; xx < row.length; ++xx) {
+      let cell = row[xx];
+      if (cell.explored) {
+        minx = min(minx, xx);
+        maxx = max(maxx, xx);
+        miny = min(miny, yy);
+        maxy = max(maxy, yy);
+      }
+    }
+  }
+  return [[minx-4, miny-4], [maxx+5, maxy+5]];
+}
+
+function doScroll() {
+  let scroll_x = keyDown(KEYS.A) - keyDown(KEYS.D) + keyDown(KEYS.LEFT) - keyDown(KEYS.RIGHT);
+  view_origin_float[0] += scroll_x * 0.5;
+  let scroll_y = keyDown(KEYS.W) - keyDown(KEYS.S) + keyDown(KEYS.UP) - keyDown(KEYS.DOWN);
+  view_origin_float[1] += scroll_y * 0.5;
+  let drag_ret = drag({
+    min_dist: 10,
+  });
+  if (drag_ret) {
+    v2add(view_origin_float, view_origin_float, drag_ret.delta);
+  }
+  let vis_range = getVisRange();
+  view_origin_float[0] = min(view_origin_float[0], -vis_range[0][0] * CELLDIM);
+  view_origin_float[0] = max(view_origin_float[0], -vis_range[1][0] * CELLDIM + game_height);
+  view_origin_float[1] = min(view_origin_float[1], -vis_range[0][1] * CELLDIM);
+  view_origin_float[1] = max(view_origin_float[1], -vis_range[1][1] * CELLDIM + game_height);
+  v2floor(view_origin, view_origin_float);
+}
+
 function statePlay(dt) {
   camera2d.setAspectFixed(game_width, game_height);
   gl.clearColor(bg_color[0], bg_color[1], bg_color[2], 0);
+
+  doScroll();
 
   game_state.tick(dt);
   drawBoard();

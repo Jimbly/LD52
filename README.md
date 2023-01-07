@@ -65,9 +65,6 @@ Dice Settlers
   * crops
   * rarely, money
 
-* Any cost to having more dice?
-  * Maybe durability and then they expire if not entertained or fed?
-  * Simply: Bedrooms get more and more expensive?  Max number of rooms of each type?
 * Goal / End condition?
   * Find and complete a giant ruin?
     * Find clues along the way as to where it might be
@@ -78,12 +75,12 @@ Dice Settlers
     * Goal of a particular amount of money (something to buy in the shop to win the game)
 
 * TODO Next
-  * Exceptions:
-    * Build: have to choose thing to build, then open space
-    * Buy / Sell: Choose stuff
-  * scrollable view
+  * foraging
+  * end condition
+  * remaining buildings
 
 * Polish:
+  * do not allow combining last two dice!
   * Undo non-random placements = kitchen / cuddle / upgrade, just hold the die without using them until both sides are full; similar undo on Port if no purchase made, but shop might have random stuff?
   * tooltips
     * showing dice faces
