@@ -72,6 +72,9 @@ const font_style_floater = fontStyle(font_style_currency, {
 const font_style_normal = fontStyle(null, {
   color: fg_color_font,
 });
+const font_style_disabled = fontStyle(font_style_normal, {
+  color: fg_color_font & 0xFFFFFF00 | 0x60,
+});
 
 let sprites = {};
 let font;
@@ -145,6 +148,8 @@ function drawDieFace(face_state, x, y, z, selected, used, focused) {
   }
 }
 
+const PROMPT_PAD = 8;
+
 function kitchenActivate(game_state, pos_left, pos_right) {
   let left = game_state.getCell(pos_left);
   let right = game_state.getCell(pos_right);
@@ -156,7 +161,6 @@ function kitchenActivate(game_state, pos_left, pos_right) {
   right.used_idx = game_state.turn_idx;
   left_die.used = true;
   game_state.selected_die = right_die_idx;
-  const PROMPT_PAD = 8;
   const PROMPT_H = CELLDIM + PROMPT_PAD * 4 + ui.font_height + ui.button_height;
   const PROMPT_W = (CELLDIM + PROMPT_PAD) * 6 + PROMPT_PAD;
   let z = Z.PROMPT;
@@ -201,6 +205,153 @@ function kitchenActivate(game_state, pos_left, pos_right) {
       left_die.used = false;
       game_state.prompt = null;
       game_state.activateCell(right_die.bedroom);
+    }
+    ui.panel({
+      x: x0,
+      y: y0,
+      w,
+      h: PROMPT_H,
+      z: z - 1,
+    });
+  };
+}
+
+function tradeDiscount(level) {
+  if (level >= 8) {
+    return 3;
+  } else if (level >= 4) {
+    return 2;
+  } else if (level >= 2) {
+    return 1;
+  }
+  return 0;
+}
+
+let CURRENCY_TO_FRAME;
+function drawCurrency(game_state, currency, x, y, z) {
+  sprites.cells.draw({
+    x, y, z,
+    frame: CURRENCY_TO_FRAME[currency],
+    color: fg_color,
+  });
+  let value = game_state[currency];
+  let eff_value = round(game_state.lazyInterp(`cur_${currency}`, value, 500, identity));
+  font.draw({
+    x: x + 1, y: y - 2, z: z+1,
+    w: CELLDIM, h: CELLDIM,
+    align: font.ALIGN.HCENTER | font.ALIGN.VBOTTOM,
+    style: font_style_currency,
+    size: ui.font_height * 2,
+    text: `${eff_value}`,
+  });
+}
+
+function marketActivate(game_state, cell, die) {
+  let level = die.getFaceState().level;
+  let discount = tradeDiscount(level);
+  let shop_entries = [{
+    type: 'currency',
+    currency: 'seeds',
+    cost: 5 - discount,
+  }, {
+    type: 'currency',
+    currency: 'wood',
+    cost: 4 - discount,
+  }, {
+    type: 'currency',
+    currency: 'stone',
+    cost: 6 - discount,
+  }];
+  const SHOP_H = 48;
+  const PROMPT_H = PROMPT_PAD * 5 + ui.font_height + ui.button_height + 16 +
+    shop_entries.length * SHOP_H;
+  const PROMPT_W = 480;
+  let z = Z.PROMPT;
+  let bought_anything = false;
+  game_state.prompt = function () {
+    let w = PROMPT_W;
+    let y0 = camera2d.y1() - PROMPT_H;
+    let x0 = round(camera2d.x0() + (camera2d.w() - w) / 2);
+    let y = y0 + PROMPT_PAD;
+    // draw current money in corner
+    drawCurrency(game_state, 'money', x0 + w - PROMPT_PAD - CELLDIM, y - PROMPT_PAD, z);
+    if (discount) {
+      font.draw({
+        style: font_style_normal,
+        x: x0, y: y + PROMPT_PAD, z, w, align: font.ALIGN.HCENTER | font.ALIGN.HWRAP,
+        text: `Buy from Town Market\n(discount of $${discount} from Face level ${level})`,
+      });
+      y += ui.font_height + PROMPT_PAD + 16;
+    } else {
+      y += 8;
+      font.draw({
+        style: font_style_normal,
+        x: x0, y: y + PROMPT_PAD, z, w, align: font.ALIGN.HCENTER,
+        text: 'Buy from Town Market',
+      });
+      y += ui.font_height + PROMPT_PAD;
+      y += 8;
+    }
+    const ICON_PAD = CELLDIM - SHOP_H;
+    const BUTTON_PAD = round((SHOP_H - ui.button_height)/2);
+    for (let ii = 0; ii < shop_entries.length; ++ii) {
+      let entry = shop_entries[ii];
+      let x = x0 + PROMPT_PAD;
+      if (entry.type === 'currency') {
+        drawCurrency(game_state, entry.currency, x, y - ICON_PAD, z);
+        x += CELLDIM + PROMPT_PAD;
+        font.draw({
+          style: font_style_normal,
+          x, y, z, h: SHOP_H, align: font.ALIGN.VCENTER,
+          text: `${entry.currency.toUpperCase()}`
+        });
+        x += 64;
+        let buy = 0;
+        if (ui.buttonText({
+          text: `Buy ($${entry.cost})`,
+          x, y: y + BUTTON_PAD,
+          z,
+          w: 110,
+          disabled: game_state.money < entry.cost,
+        })) {
+          buy = 1;
+        }
+        x += 110 + PROMPT_PAD;
+        if (ui.buttonText({
+          text: `Buy 10 ($${entry.cost * 10})`,
+          x, y: y + BUTTON_PAD,
+          z,
+          disabled: game_state.money < entry.cost * 10,
+        })) {
+          buy = 10;
+        }
+        if (buy) {
+          bought_anything = true;
+          game_state.resourceMod({
+            pos: game_state.getResourcePos('money'), // TODO: map screen space to world space to show up above shop
+          }, 'money', -buy * entry.cost);
+          game_state.resourceMod({
+            pos: game_state.getResourcePos(entry.currency), // TODO: map screen space to world space
+          }, entry.currency, buy);
+        }
+        x += ui.button_width + PROMPT_PAD;
+      }
+      y += SHOP_H;
+    }
+    y += PROMPT_PAD;
+    if (ui.buttonText({
+      text: bought_anything ? 'Done' : 'Cancel',
+      x: x0 + w - ui.button_width - PROMPT_PAD,
+      y, z,
+    })) {
+      if (!bought_anything) {
+        cell.used_idx = -1;
+        die.used = false;
+        game_state.selected_die = game_state.dice.indexOf(die);
+        assert.equal(game_state.dice[game_state.selected_die], die);
+        game_state.activateCell(die.bedroom);
+      }
+      game_state.prompt = null;
     }
     ui.panel({
       x: x0,
@@ -299,15 +450,6 @@ const CELL_TYPES = [{
     cell.just_advanced = prog / cell.progress_max;
     cell.last_progress_max = cell.progress_max;
     cell.progress = 0;
-    // if (advanced) {
-    //   game_state.addFloater({
-    //     pos: cell.pos,
-    //     // eslint-disable-next-line @typescript-eslint/no-invalid-this
-    //     text: `${this.label} Cleared!`,
-    //   });
-    //   cell.type = CellType.Meadow;
-    //   cell.init(game_state);
-    // }
   },
 }, {
   name: 'TownBuy',
@@ -315,6 +457,7 @@ const CELL_TYPES = [{
   action: 'Buy',
   indoors: true,
   need_face: Face.Trade,
+  activate: marketActivate,
 }, {
   name: 'TownEntertain',
   label: 'Square',
@@ -513,6 +656,15 @@ CELL_TYPES.forEach((a, idx) => {
   a.type_id = idx;
 });
 
+CURRENCY_TO_FRAME = {
+  money: CellType.StorageMoney,
+  wood: CellType.StorageWood,
+  stone: CellType.StorageStone,
+  seeds: CellType.StorageSeed,
+  crop: CellType.StorageCrop,
+};
+
+
 function resourceActivate(game_state, cell, die) {
   cell.progress = 0;
   cell.progress_max = cell.resources;
@@ -692,11 +844,18 @@ class GameState {
       //   this.selectDie(1);
       //   this.activateCell([6,5]);
       // }, 500);
+
       // Sell test
-      this.crop = 11;
+      // this.crop = 11;
+      // this.dice[0].cur_face = 5;
+      // this.selectDie(0);
+      // this.activateCell([10,5]);
+
+      // Buy test
+      this.money = 25;
       this.dice[0].cur_face = 5;
       this.selectDie(0);
-      this.activateCell([10,5]);
+      this.activateCell([9,5]);
     }
   }
   lazyInterpReset(key, value) {
@@ -1000,18 +1159,20 @@ function drawProgress(x, y, cell, color) {
   let pmax = cell.just_advanced ? cell.last_progress_max : cell.progress_max;
   let desired_progress = cell.just_advanced ? cell.just_advanced : cell.progress / cell.progress_max;
   let interp_progress = game_state.lazyInterp(`dp_${x}_${y}`,
-    desired_progress, 200, easeInOut);
+    desired_progress, 300, easeInOut);
   if (cell.just_advanced && interp_progress === cell.just_advanced) {
     cell.just_advanced = false;
     game_state.lazyInterpReset(`dp_${x}_${y}`, 0);
   }
   let p = round(interp_progress * w);
-  p = clamp(p, cell.progress ? 1 : 0, cell.progress < cell.progress_max ? w - 1 : w);
+  p = clamp(p, interp_progress ? 1 : 0, interp_progress < pmax ? w - 1 : w);
   if (p !== w) {
     drawRect(x0 + p, y0, x1, y1, z, bg_color);
-    for (let ii = 1; ii < pmax; ++ii) {
-      let xx = x0 + round(ii / cell.progress_max * w);
-      drawLine(xx + 0.5, y0, xx + 0.5, y1, z+0.1, 1, 1, color);
+    if (pmax < w/2) {
+      for (let ii = 1; ii < pmax; ++ii) {
+        let xx = x0 + round(ii / pmax * w);
+        drawLine(xx + 0.5, y0, xx + 0.5, y1, z+0.1, 1, 1, color);
+      }
     }
   }
 }
@@ -1084,6 +1245,7 @@ function drawBoard() {
         dice[die_at].focused = focused;
         focused = false;
       }
+      // draw cell graphics
       sprites.cells.draw({
         x, y, z: Z.CELLS,
         frame,
@@ -1144,7 +1306,7 @@ function drawBoard() {
         font.draw({
           x: x + 1, y: y - 2, z: Z.CELLS+1,
           w: CELLDIM, h: CELLDIM,
-          align: font.ALIGN.HCENTER | font.ALIGN.HWRAP | font.ALIGN.VBOTTOM,
+          align: font.ALIGN.HCENTER | font.ALIGN.VBOTTOM,
           style: font_style_currency,
           size: ui.font_height * 2,
           text: `${eff_value}`,
@@ -1253,7 +1415,7 @@ function statePlay(dt) {
     text: game_state.allDiceUsed() ? 'NEXT TURN' : 'Next Turn (Pass)',
     disabled,
   }) || !disabled && (keyDownEdge(KEYS.N) || keyDownEdge(KEYS.RETURN))) {
-    if (game_state.kitchenAvailable()) {
+    if (game_state.kitchenAvailable() && !engine.DEBUG) {
       ui.modalDialog({
         text: 'Hint: You can use any one die to PREP the Kitchen in order to ASSIGN any' +
           ' other die to any face.  Are you sure you wish to pass your turn?',
@@ -1293,6 +1455,7 @@ export function main() {
   ui_sprites.button.hs = [24];
   ui_sprites.button_rollover = { name: 'pixely/button_over', ws: [24,16,24], hs: [24] };
   ui_sprites.panel = { name: 'panel_wood', ws: [12, 8, 12], hs: [11,2,11] };
+  ui_sprites.color_set_shades = [1, 1, 0.5];
 
   if (!engine.startup({
     game_width,
@@ -1309,7 +1472,7 @@ export function main() {
   }
   font = engine.font;
 
-  ui.setFontStyles(font_style_normal);
+  ui.setFontStyles(font_style_normal, null, null, font_style_disabled);
   ui.scaleSizes(24 / 32);
   ui.setFontHeight(16);
 

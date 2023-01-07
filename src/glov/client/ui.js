@@ -221,6 +221,7 @@ export let tooltip_pad = 8;
 // });
 export let font_style_normal = glov_font.styleColored(null, 0x000000ff);
 export let font_style_focused = glov_font.style(font_style_normal, {});
+let font_style_disabled = glov_font.style(font_style_normal, {});
 
 export let font;
 export let title_font;
@@ -230,10 +231,11 @@ export const color_button = makeColorSet([1,1,1,1]);
 export const color_panel = vec4(1, 1, 0.75, 1);
 export let modal_font_style = glov_font.styleColored(null, 0x000000ff);
 
-export function setFontStyles(normal, focused, modal) {
+export function setFontStyles(normal, focused, modal, disabled) {
   font_style_normal = normal;
   font_style_focused = focused || glov_font.style(normal, {});
   modal_font_style = modal || glov_font.style(normal, {});
+  font_style_disabled = disabled || glov_font.style(normal, {});
 }
 
 
@@ -398,9 +400,9 @@ function uiStartup(param) {
   if (sprites.button_down && color_set_shades[2] !== 1) {
     colorSetSetShades(color_set_shades[1], 1, color_set_shades[3]);
   }
-  if (sprites.button_disabled && color_set_shades[3] !== 1) {
-    colorSetSetShades(color_set_shades[1], color_set_shades[2], 1);
-  }
+  // if (sprites.button_disabled && color_set_shades[3] !== 1) {
+  //   colorSetSetShades(color_set_shades[1], color_set_shades[2], 1);
+  // }
 
   button_keys = {
     ok: { key: [KEYS.O], pad: [PAD.X], low_key: [KEYS.ESC] },
@@ -880,8 +882,9 @@ export function buttonTextDraw(param, state, focused) {
   profilerStartFunc();
   buttonBackgroundDraw(param, state);
   let hpad = min(param.font_height * 0.25, param.w * 0.1);
+  let disabled = state === 'disabled';
   font.drawSizedAligned(
-    focused ? font_style_focused : font_style_normal,
+    disabled ? font_style_disabled : focused ? font_style_focused : font_style_normal,
     param.x + hpad, param.y, param.z + 0.1,
     param.font_height, param.align || glov_font.ALIGN.HVCENTERFIT, param.w - hpad * 2, param.h, param.text);
   profilerStopFunc();

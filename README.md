@@ -78,7 +78,6 @@ Dice Settlers
     * Goal of a particular amount of money (something to buy in the shop to win the game)
 
 * TODO Next
-  * Buy seeds at shop
   * Build menu
   * Exceptions:
     * Build: have to choose thing to build, then open space
