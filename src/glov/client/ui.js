@@ -222,18 +222,20 @@ export let tooltip_pad = 8;
 export let font_style_normal = glov_font.styleColored(null, 0x000000ff);
 export let font_style_focused = glov_font.style(font_style_normal, {});
 
-export function setFontStyles(normal, focused) {
-  font_style_normal = normal;
-  font_style_focused = focused || glov_font.style(normal, {});
-}
-
 export let font;
 export let title_font;
 export const sprites = {};
 
 export const color_button = makeColorSet([1,1,1,1]);
 export const color_panel = vec4(1, 1, 0.75, 1);
-export const modal_font_style = glov_font.styleColored(null, 0x000000ff);
+export let modal_font_style = glov_font.styleColored(null, 0x000000ff);
+
+export function setFontStyles(normal, focused, modal) {
+  font_style_normal = normal;
+  font_style_focused = focused || glov_font.style(normal, {});
+  modal_font_style = modal || glov_font.style(normal, {});
+}
+
 
 let sounds = {};
 export let button_mouseover = false; // for callers to poll the very last button

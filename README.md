@@ -78,13 +78,13 @@ Dice Settlers
     * Goal of a particular amount of money (something to buy in the shop to win the game)
 
 * TODO Next
-  * Kitchen menu
-  * Build menu
   * Sell crops at port
   * Buy seeds at shop
+  * Build menu
   * Exceptions:
     * Build: have to choose thing to build, then open space
     * Buy / Sell: Choose stuff
+  * scrollable view
 
 * Polish:
   * Undo non-random placements = kitchen / cuddle / upgrade, just hold the die without using them until both sides are full; similar undo on Port if no purchase made, but shop might have random stuff?

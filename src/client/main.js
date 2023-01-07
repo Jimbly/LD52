@@ -13,6 +13,7 @@ import * as net from 'glov/client/net.js';
 import {
   SPOT_DEFAULT_BUTTON,
   SPOT_DEFAULT_BUTTON_DISABLED,
+  SPOT_STATE_DOWN,
   spot,
 } from 'glov/client/spot';
 import { spriteSetGet } from 'glov/client/sprite_sets.js';
@@ -35,12 +36,15 @@ const TICKS_TEND = 8;
 const TICKS_HARVEST = 4;
 const CROPS_PER_HARVEST = 8;
 
+const MAX_LEVEL = 8;
+
 window.Z = window.Z || {};
 Z.BACKGROUND = 1;
 Z.SEP = 10;
 Z.CELLS = 20;
 Z.DICE = 100;
-Z.SPRITES = 100;
+Z.UI = 150;
+Z.PROMPT = 180;
 Z.FLOATERS = 200;
 
 // Virtual viewport for our game logic
@@ -105,10 +109,113 @@ function resourceInit(game_state, cell) {
   cell.resources = 5 + game_state.rand.range(5);
 }
 
+function drawDieFace(face_state, x, y, z, selected, used, focused) {
+  let color1 = selected ? bg_color : used ? fg_color_used : fg_color;
+  let color2 = selected ? fg_color : bg_color;
+  let font_color = selected ? fg_color_font : bg_color_font;
+
+  let show_xp = face_state.level < MAX_LEVEL && (face_state.xp || face_state.level > 1);
+  sprites.faces.draw({
+    x, y, z,
+    frame: show_xp ? 9: 8,
+    color: color1,
+  });
+  if (focused || selected) {
+    sprites.faces.draw({
+      x, y, z: z + 0.5,
+      frame: 13,
+      color: fg_color,
+    });
+  }
+  sprites.faces.draw({
+    x, y, z: z + 1,
+    frame: face_state.type,
+    color: color2,
+  });
+  font.draw({
+    x: x + 43,
+    y: y + 14,
+    z: z + 3,
+    text: `${face_state.level}`,
+    color: font_color,
+  });
+  if (show_xp) {
+    let w = clamp(round(face_state.xp / face_state.xp_next * 33), face_state.xp ? 1 : 0, 32);
+    drawLine(x + 16, y + 49.5, x + 16 + w, y + 49.5, z + 2, 1, 1, color2);
+  }
+}
+
+function kitchenActivate(game_state, pos_left, pos_right) {
+  let left = game_state.getCell(pos_left);
+  let right = game_state.getCell(pos_right);
+  let { dice } = game_state;
+  let left_die = dice[game_state.freeDieAt(pos_left)];
+  let right_die_idx = game_state.freeDieAt(pos_right);
+  let right_die = dice[right_die_idx];
+  left.used_idx = game_state.turn_idx;
+  right.used_idx = game_state.turn_idx;
+  left_die.used = true;
+  game_state.selected_die = right_die_idx;
+  const PROMPT_PAD = 8;
+  const PROMPT_H = CELLDIM + PROMPT_PAD * 4 + ui.font_height + ui.button_height;
+  const PROMPT_W = (CELLDIM + PROMPT_PAD) * 6 + PROMPT_PAD;
+  let z = Z.PROMPT;
+  game_state.prompt = function () {
+    let w = PROMPT_W;
+    let y0 = camera2d.y1() - PROMPT_H;
+    let x0 = round(camera2d.x0() + (camera2d.w() - w) / 2);
+    let y = y0 + PROMPT_PAD;
+    font.draw({
+      color: fg_color_font,
+      x: x0, y: y + PROMPT_PAD, z, w, align: font.ALIGN.HCENTER,
+      text: 'Yum!  Which face would you like to be active?',
+    });
+    y += ui.font_height + PROMPT_PAD;
+    let x = x0 + PROMPT_PAD;
+    let done = false;
+    for (let ii = 0; ii < 6; ++ii) {
+      let face_state = right_die.faces[ii];
+      let selected = right_die.cur_face === ii;
+      let spot_ret = spot({
+        x, y, w: CELLDIM, h: CELLDIM,
+        def: selected ? SPOT_DEFAULT_BUTTON_DISABLED : SPOT_DEFAULT_BUTTON,
+        disabled_focusable: false,
+      });
+      let { focused, ret, spot_state } = spot_ret;
+      drawDieFace(face_state, x, y, z, spot_state === SPOT_STATE_DOWN, selected, focused);
+      if (ret && !done) {
+        done = true;
+        right_die.cur_face = ii;
+        game_state.prompt = null;
+      }
+      x += CELLDIM + PROMPT_PAD;
+    }
+    y += CELLDIM + PROMPT_PAD;
+    if (!done && ui.buttonText({
+      text: 'Cancel',
+      x: x0 + w - ui.button_width - PROMPT_PAD,
+      y, z,
+    })) {
+      left.used_idx = -1;
+      right.used_idx = -1;
+      left_die.used = false;
+      game_state.prompt = null;
+      game_state.activateCell(right_die.bedroom);
+    }
+    ui.panel({
+      x: x0,
+      y: y0,
+      w,
+      h: PROMPT_H,
+      z: z - 1,
+    });
+  };
+}
+
 const CELL_TYPES = [{
   name: 'Unexplored', // just a tile, not actually a type
   action: 'Scout',
-  label: '?',
+  label: '',
   indoors: false,
   need_face: Face.Explore,
   activate: function (game_state, cell, die) {
@@ -129,6 +236,19 @@ const CELL_TYPES = [{
   name: 'Bedroom',
   label: 'Bunk',
   indoors: true,
+  need_face: Face.Any,
+  hide_face: true,
+  activate: function (game_state, cell, die) {
+    die.used = false;
+    cell.used_idx = -1;
+    if (!v2same(die.bedroom, cell.pos)) {
+      let other_die = game_state.dieForBedroom(cell.pos);
+      if (other_die) {
+        other_die.bedroom = die.bedroom;
+      }
+      die.bedroom = cell.pos;
+    }
+  },
 }, {
   name: 'Forest',
   label: 'Forest',
@@ -322,12 +442,32 @@ const CELL_TYPES = [{
   indoors: true,
   wide: true,
   need_face: Face.Any,
+  activate: function (game_state, cell, die) {
+    die.used = false;
+    cell.used_idx = -1;
+    let right = [cell.pos[0]+1, cell.pos[1]];
+    let other_die = game_state.freeDieAt(right);
+    if (other_die === -1) {
+      return;
+    }
+    kitchenActivate(game_state, cell.pos, right);
+  },
 }, {
   name: 'KitchenRight',
   label: null,
   action: 'Assign',
   indoors: true,
   need_face: Face.Any,
+  activate: function (game_state, cell, die) {
+    die.used = false;
+    cell.used_idx = -1;
+    let left = [cell.pos[0]-1, cell.pos[1]];
+    let other_die = game_state.freeDieAt(left);
+    if (other_die === -1) {
+      return;
+    }
+    kitchenActivate(game_state, left, cell.pos);
+  },
 }, {
   name: 'TempleUpperLeft',
   indoors: false,
@@ -367,7 +507,6 @@ function resourceActivate(game_state, cell, die) {
   }
 }
 
-const MAX_LEVEL = 8;
 function xpForNextLevel(level) {
   return level * level;
 }
@@ -511,6 +650,7 @@ class GameState {
       this.setInitialCell(pair, pair[2]);
     });
     this.selected_die = null;
+    this.prompt = null;
     this.animation = null;
     this.money = 0;
     this.seeds = 1;
@@ -518,7 +658,13 @@ class GameState {
     this.stone = 0;
     this.crop = 0;
     if (engine.DEBUG) {
-      //this.selectDie(0);
+      // Kitchen test
+      // this.selectDie(0);
+      // this.activateCell([5,5]);
+      // setTimeout(() => {
+      //   this.selectDie(1);
+      //   this.activateCell([6,5]);
+      // }, 500);
     }
   }
   lazyInterpReset(key, value) {
@@ -662,12 +808,12 @@ class GameState {
     let t = anim.add(0, 300, (progress) => {
       die.lerp_t = progress;
       if (progress === 1) {
-        this.dieActivated(pos, cell, eff_type, die);
         die.lerp_to = null;
         die.lerp_t = 0;
         die.used = true;
         v2copy(die.pos, pos);
         cell.used_idx = this.turn_idx;
+        this.dieActivated(pos, cell, eff_type, die);
       }
     });
     // t = anim.add(t + 1000, 300, (progress) => alpha = 1 - progress);
@@ -688,6 +834,17 @@ class GameState {
       }
     }
     return -1;
+  }
+
+  dieForBedroom(pos) {
+    let { dice } = this;
+    for (let ii = 0; ii < dice.length; ++ii) {
+      let die = dice[ii];
+      if (v2same(die.bedroom, pos)) {
+        return die;
+      }
+    }
+    return null;
   }
 
   addFloater(floater) {
@@ -727,6 +884,11 @@ class GameState {
       if (id.frame < engine.frame_index - 1) {
         delete this.interp_data[key];
       }
+    }
+
+    if (this.prompt) {
+      this.prompt(dt);
+      eatAllInput();
     }
   }
 }
@@ -855,9 +1017,10 @@ function drawBoard() {
       }
       let die_at = game_state.freeDieAt([xx, yy]);
       let err;
+      let used = cell.used_idx === turn_idx;
       let cell_selectable = any_selected && faceMatch(eff_type.need_face, dice[selected_die].getFace()) &&
-        (!eff_type.check || !(err = eff_type.check(game_state, cell)));
-      let die_selectable = die_at !== -1 && (!any_selected || selected_die === die_at);
+        (!eff_type.check || !(err = eff_type.check(game_state, cell))) && die_at === -1 && !used;
+      let die_selectable = die_at !== -1; // && (!any_selected || selected_die === die_at);
       let frame = eff_type.type_id;
       let x = x0 + xx * CELLDIM;
       let y = y0 + yy * CELLDIM;
@@ -884,6 +1047,7 @@ function drawBoard() {
         frame,
         color: err ? fg_color_disabled : fg_color,
       });
+      // Draw header
       let text;
       if (eff_type.label && !any_selected) {
         text = eff_type.label;
@@ -894,7 +1058,6 @@ function drawBoard() {
       if (typeof text === 'function') {
         text = text(game_state, cell);
       }
-      let used = cell.used_idx === turn_idx;
       let title_color_font = used ? fg_color_font_used : fg_color_font;
       let title_color = used ? fg_color_used : fg_color;
       if (text) {
@@ -910,6 +1073,7 @@ function drawBoard() {
           text: text.toUpperCase(),
         });
       }
+      // Draw error overlay
       if (err) {
         font.draw({
           x: x + 1, y: y + 1, z: Z.CELLS+1,
@@ -919,6 +1083,7 @@ function drawBoard() {
           text: err.toUpperCase(),
         });
       }
+      // Draw resources left
       if (eff_type.show_resources) {
         let value = cell.resources;
         font.draw({
@@ -930,6 +1095,7 @@ function drawBoard() {
           text: `${value}`,
         });
       }
+      // Draw currency amount
       if (eff_type.currency) {
         let value = game_state[eff_type.currency];
         font.draw({
@@ -941,7 +1107,8 @@ function drawBoard() {
           text: `${value}`,
         });
       }
-      if (!used && eff_type.need_face !== undefined) {
+      // Draw available die face
+      if (!used && eff_type.need_face !== undefined && !eff_type.hide_face) {
         let color = any_selected && !cell_selectable ? fg_color_disabled : fg_color;
         // no dice in it at the moment
         sprites.faces.draw({
@@ -1019,41 +1186,9 @@ function drawDice() {
 
     let { focused } = die;
     let selected = selected_die === ii;
-
-    let color1 = die.used ? fg_color_used : selected ? bg_color : fg_color;
-    let color2 = selected ? fg_color : bg_color;
-    let font_color = selected ? fg_color_font : bg_color_font;
-
     let face_state = die.getFaceState();
-    let show_xp = face_state.level < MAX_LEVEL && (face_state.xp || face_state.level > 1);
-    sprites.faces.draw({
-      x, y, z,
-      frame: show_xp ? 9: 8,
-      color: color1,
-    });
-    if (focused || selected) {
-      sprites.faces.draw({
-        x, y, z: z + 0.5,
-        frame: 13,
-        color: fg_color,
-      });
-    }
-    sprites.faces.draw({
-      x, y, z: z + 1,
-      frame: face_state.type,
-      color: color2,
-    });
-    font.draw({
-      x: x + 43,
-      y: y + 14,
-      z: z + 3,
-      text: `${face_state.level}`,
-      color: font_color,
-    });
-    if (show_xp) {
-      let w = clamp(round(face_state.xp / face_state.xp_next * 33), face_state.xp ? 1 : 0, 32);
-      drawLine(x + 16, y + 49.5, x + 16 + w, y + 49.5, z + 2, 1, 1, color2);
-    }
+
+    drawDieFace(face_state, x, y, z, selected, die.used, focused);
   }
 }
 
@@ -1067,13 +1202,15 @@ function statePlay(dt) {
   drawDice();
 
   let button_w = 200;
+  let disabled = Boolean(game_state.prompt || game_state.animation);
   if (ui.button({
     x: camera2d.x1() - button_w - 4,
     y: camera2d.y1() - ui.button_height - 4,
     w: button_w,
     text: game_state.allDiceUsed() ? 'NEXT TURN' : 'Next Turn (Pass)',
-  }) || keyDownEdge(KEYS.N) || keyDownEdge(KEYS.RETURN)) {
-    if (game_state.kitchenAvailable() && !engine.DEBUG) {
+    disabled,
+  }) || !disabled && (keyDownEdge(KEYS.N) || keyDownEdge(KEYS.RETURN))) {
+    if (game_state.kitchenAvailable()) {
       ui.modalDialog({
         text: 'Hint: You can use any one die to PREP the Kitchen in order to ASSIGN any' +
           ' other die to any face.  Are you sure you wish to pass your turn?',
@@ -1112,6 +1249,7 @@ export function main() {
   ui_sprites.button.ws = [24,16,24];
   ui_sprites.button.hs = [24];
   ui_sprites.button_rollover = { name: 'pixely/button_over', ws: [24,16,24], hs: [24] };
+  ui_sprites.panel = { name: 'panel_wood', ws: [12, 8, 12], hs: [11,2,11] };
 
   if (!engine.startup({
     game_width,
