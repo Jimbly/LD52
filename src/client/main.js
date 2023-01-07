@@ -7,6 +7,7 @@ import assert from 'assert';
 import { createAnimationSequencer } from 'glov/client/animation';
 import * as camera2d from 'glov/client/camera2d.js';
 import * as engine from 'glov/client/engine.js';
+import { fontStyle, intColorFromVec4Color } from 'glov/client/font';
 import { KEYS, eatAllInput, keyDownEdge } from 'glov/client/input.js';
 import * as net from 'glov/client/net.js';
 import {
@@ -17,13 +18,13 @@ import {
 import { spriteSetGet } from 'glov/client/sprite_sets.js';
 import { createSprite } from 'glov/client/sprites.js';
 import * as ui from 'glov/client/ui.js';
-import { LINE_ALIGN, drawLine } from 'glov/client/ui.js';
+import { LINE_ALIGN, drawLine, drawRect } from 'glov/client/ui.js';
 import { mashString, randCreate } from 'glov/common/rand_alea';
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-import { clamp, easeIn, easeInOut, easeOut } from 'glov/common/util';
-import { v2copy, v2lerp, v2same, vec2, vec4 } from 'glov/common/vmath';
+import { clamp, easeIn, easeInOut, easeOut, lerp } from 'glov/common/util';
+import { v2copy, v2lerp, v2same, v3copy, v3lerp, vec2, vec4 } from 'glov/common/vmath';
 
-const { floor, round, PI } = Math;
+const { floor, min, round, PI } = Math;
 
 window.Z = window.Z || {};
 Z.BACKGROUND = 1;
@@ -38,13 +39,18 @@ const game_height = 480;
 
 const CELLDIM = 64;
 
-const bg_color = vec4(0,0,0,1);
-const bg_color_font = 0x000000ff;
-const fg_color = vec4(1,1,1,1);
-const fg_color_font = 0xFFFFFFff;
-const fg_color_disabled = vec4(1,1,1,0.4);
-const fg_color_used = vec4(0.3,0.3,0.3, 1);
-const fg_color_font_used = 0x444444ff;
+const bg_color = vec4(0.15,0.1,0,1);
+const bg_color_font = intColorFromVec4Color(bg_color);
+const fg_color = vec4(1,0.95,0.8,1);
+const fg_color_font = intColorFromVec4Color(fg_color);
+const fg_color_disabled = v3copy(vec4(0,0,0, 0.4), fg_color);
+const fg_color_used = v3lerp(vec4(0,0,0, 1), 0.3, bg_color, fg_color);
+const fg_color_font_used = intColorFromVec4Color(fg_color_used);
+const font_style_currency = fontStyle(null, {
+  color: fg_color_font,
+  outline_color: bg_color_font,
+  outline_width: 3,
+});
 
 let sprites = {};
 let font;
@@ -66,11 +72,21 @@ const FACES = [{
   name: 'Build',
 }, {
   name: 'Entertain',
+}, {
+  name: 'Any',
 }];
 const Face = {};
 FACES.forEach((a, idx) => {
   Face[a.name] = idx;
 });
+
+function faceMatch(fa, fb) {
+  return fa === fb || fa === Face.Any || fb === Face.Any;
+}
+
+function resourceInit(game_state, cell) {
+  cell.resources = 5 + game_state.rand.range(5);
+}
 
 const CELL_TYPES = [{
   name: 'Unexplored', // just a tile, not actually a type
@@ -90,25 +106,29 @@ const CELL_TYPES = [{
   need_face: Face.Explore,
 }, {
   name: 'Bedroom',
-  label: 'Bedroom',
+  label: 'Bunk',
   indoors: true,
 }, {
   name: 'Forest',
   label: 'Forest',
   action: 'Gather',
+  init: resourceInit,
   indoors: false,
   need_face: Face.Gather,
+  show_resources: true,
 }, {
   name: 'Quarry',
   label: 'Quarry',
   action: 'Gather',
+  init: resourceInit,
   indoors: false,
   need_face: Face.Gather,
+  show_resources: true,
 }, {
   name: 'Build',
   label: 'Shed',
   action: 'Build',
-  indoors: true,
+  indoors: false,
   need_face: Face.Build,
 }, {
   name: 'TownSell',
@@ -141,6 +161,10 @@ const CELL_TYPES = [{
   indoors: true,
 }, {
   name: 'Crop',
+  init: function (game_state, cell) {
+    cell.crop_stage = 0;
+    cell.progress_max = 2;
+  },
   label: function (game_stae, cell) {
     if (cell.crop_stage === 0) {
       return 'Field';
@@ -160,21 +184,30 @@ const CELL_TYPES = [{
     }
   },
   check: function (game_state, cell) {
-    if (cell.crop_stage === 0) {
+    if (cell.crop_stage === 0 && cell.progress === 0) {
       if (!game_state.seeds) {
         return 'Need\nseeds';
       }
     }
     return null;
   },
-  activate: function (game_state, cell) {
-    if (cell.crop_stage === 0) {
+  activate: function (game_state, cell, die) {
+    if (cell.crop_stage === 0 && cell.progress === 0) {
       // TODO: floater 'Planted!'
       // TODO: floater -1 seed
-      cell.crop_stage++;
       game_state.seeds--;
-    } else {
-      assert(0); // TODO
+    }
+    cell.progress += die.level;
+    if (cell.progress >= cell.progress_max) {
+      cell.crop_stage++;
+      cell.just_advanced = true;
+      cell.last_progress_max = cell.progress_max;
+      cell.progress = 0;
+      if (cell.crop_stage === 1) {
+        cell.progress_max = 8;
+      } else {
+        cell.progress_max = 4;
+      }
     }
   },
   indoors: false,
@@ -184,11 +217,13 @@ const CELL_TYPES = [{
   label: 'Exercise',
   action: 'Reroll',
   indoors: true,
+  need_face: Face.Any,
 }, {
   name: 'Replace',
   label: 'Library',
   action: 'Replace',
   indoors: true,
+  need_face: Face.Any,
 }, {
   name: 'Entertain',
   label: 'Parlor',
@@ -198,40 +233,53 @@ const CELL_TYPES = [{
 }, {
   name: 'StorageWood',
   indoors: false,
+  currency: 'wood',
 }, {
   name: 'StorageStone',
   indoors: false,
+  currency: 'stone',
 }, {
   name: 'StorageSeed',
   indoors: false,
+  currency: 'seeds',
 }, {
   name: 'StorageCrop',
   indoors: false,
+  currency: 'crop',
 }, {
   name: 'StorageMoney',
+  label: 'Bank',
   indoors: true,
+  currency: 'money',
 }, {
   name: 'CuddleLeft',
   indoors: true,
+  need_face: Face.Any,
 }, {
   name: 'CuddleRight',
   indoors: true,
+  need_face: Face.Any,
 }, {
   name: 'UpgradeLeft',
   indoors: true,
+  need_face: Face.Any,
 }, {
   name: 'UpgradeRight',
   indoors: true,
+  need_face: Face.Any,
 }, {
   name: 'KitchenLeft',
   label: 'Kitchen',
-  action: 'Cook',
+  action: 'Prep',
   indoors: true,
+  wide: true,
+  need_face: Face.Any,
 }, {
   name: 'KitchenRight',
   label: null,
-  action: 'Eat',
+  action: 'Assign',
   indoors: true,
+  need_face: Face.Any,
 }, {
   name: 'TempleUpperLeft',
   indoors: false,
@@ -258,6 +306,9 @@ class Cell {
     this.indoors = false;
     this.used_idx = -1;
     this.crop_stage = 0;
+    this.resources = 0;
+    this.progress = 0;
+    this.progress_max = 0;
   }
 
   getEffType() {
@@ -275,7 +326,7 @@ class Die {
     this.faces = [Face.Explore, Face.Farm, Face.Farm, Face.Gather, Face.Build, Face.Trade];
     this.pos = [pos[0],pos[1]];
     this.bedroom = [pos[0],pos[1]];
-    this.cur_face = 0;
+    this.cur_face = 1;
     this.level = 1;
     this.xp = 0;
     this.xp_next = xpForNextLevel(this.level);
@@ -296,6 +347,7 @@ class GameState {
     this.w = w;
     this.h = h;
     this.board = [];
+    this.interp_data = {};
     for (let ii = 0; ii < h; ++ii) {
       let row = [];
       for (let jj = 0; jj < w; ++jj) {
@@ -305,30 +357,75 @@ class GameState {
     }
     this.dice = [];
     [
-      [5,5],
-      [6,5],
+      [5,6],
+      [6,6],
     ].forEach((pos) => {
       let die = new Die(pos);
+      if (engine.DEBUG) {
+        die.level = 8;
+      }
       this.dice.push(die);
       this.setInitialCell(pos, CellType.Bedroom);
     });
     [
-      [5,6,CellType.Crop],
-      [6,6,CellType.Meadow],
+      [3,5,CellType.StorageSeed],
+      [4,5,CellType.StorageCrop],
+      [3,6,CellType.StorageWood],
+      [4,6,CellType.StorageStone],
+      [5,4,CellType.Build],
+      [5,5,CellType.KitchenLeft],
+      [6,5,CellType.KitchenRight],
+      [5,7,CellType.Crop],
+      [6,7,CellType.Meadow],
       [7,5,CellType.Forest],
       [8,5,CellType.Quarry],
+      [9,5,CellType.TownBuy],
+      [10,5,CellType.TownSell],
+      [9,6,CellType.TownEntertain],
+      [10,6,CellType.StorageMoney],
     ].forEach((pair) => {
       this.setInitialCell(pair, pair[2]);
     });
     this.selected_die = null;
     this.animation = null;
+    this.money = 0;
     this.seeds = 1;
     this.wood = 0;
     this.stone = 0;
-    this.crops = 0;
+    this.crop = 0;
     if (engine.DEBUG) {
-      this.selectDie(0);
+      //this.selectDie(0);
     }
+  }
+  lazyInterpReset(key, value) {
+    let id = this.interp_data[key];
+    assert(id);
+    id.dt = 0;
+    id.value0 = value;
+    id.value1 = value;
+    id.last_value = value;
+  }
+  lazyInterp(key, value, time, easeFn) {
+    let id = this.interp_data[key];
+    if (!id) {
+      id = this.interp_data[key] = {
+        value0: value,
+        value1: value,
+        last_value: value,
+        dt: 0,
+      };
+    }
+    if (value !== id.value1) {
+      id.dt = 0;
+      id.value0 = id.last_value;
+      id.value1 = value;
+    }
+    id.frame = engine.frame_index;
+    id.dt += engine.frame_dt;
+    let t = min(id.dt / time, 1);
+    let new_value = lerp(easeFn(t, 2), id.value0, id.value1);
+    id.last_value = new_value;
+    return new_value;
   }
   nextTurn() {
     assert(!this.animation);
@@ -365,11 +462,42 @@ class GameState {
     }
     return true;
   }
+  numDiceUsed() {
+    let { dice } = this;
+    let ret = 0;
+    for (let ii = 0; ii < dice.length; ++ii) {
+      if (dice[ii].used) {
+        ret++;
+      }
+    }
+    return ret;
+  }
+  kitchenAvailable() {
+    if (this.dice.length - this.numDiceUsed() < 2) {
+      return false;
+    }
+    let { board, turn_idx } = this;
+    for (let yy = 0; yy < board.length; ++yy) {
+      let row = board[yy];
+      for (let xx = 0; xx < row.length; ++xx) {
+        let cell = row[xx];
+        if (cell.used_idx === turn_idx) {
+          continue;
+        }
+        if (cell.type === CellType.KitchenRight) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
   setExplored(pos) {
     this.board[pos[1]][pos[0]].explored = true;
   }
   setCell(pos, type) {
-    this.board[pos[1]][pos[0]].type = type;
+    let cell = this.board[pos[1]][pos[0]];
+    cell.type = type;
+    CELL_TYPES[type].init?.(this, cell);
   }
   setInitialCell(pos, type) {
     this.setCell(pos, type);
@@ -393,7 +521,7 @@ class GameState {
     let cell = this.getCell(pos);
     assert(cell);
     let eff_type = cell.getEffType();
-    assert.equal(eff_type.need_face, die.getFace());
+    assert(faceMatch(eff_type.need_face, die.getFace()));
     assert(!eff_type.check || !eff_type.check(this, cell));
     assert(!this.animation);
     let anim = this.animation = createAnimationSequencer();
@@ -404,7 +532,7 @@ class GameState {
     let t = anim.add(0, 300, (progress) => {
       die.lerp_t = progress;
       if (progress === 1) {
-        this.dieActivated(pos, cell, eff_type);
+        this.dieActivated(pos, cell, eff_type, die);
         die.lerp_to = null;
         die.lerp_t = 0;
         die.used = true;
@@ -415,9 +543,9 @@ class GameState {
     // t = anim.add(t + 1000, 300, (progress) => alpha = 1 - progress);
   }
 
-  dieActivated(pos, cell, eff_type) {
+  dieActivated(pos, cell, eff_type, die) {
     if (eff_type.activate) {
-      eff_type.activate(this, cell);
+      eff_type.activate(this, cell, die);
     }
   }
 
@@ -440,6 +568,12 @@ class GameState {
         eatAllInput();
       }
     }
+    for (let key in this.interp_data) {
+      let id = this.interp_data[key];
+      if (id.frame < engine.frame_index - 1) {
+        delete this.interp_data[key];
+      }
+    }
   }
 }
 
@@ -456,7 +590,7 @@ function init() {
   sprites.cells = createSprite({
     name: 'cells',
     ws: [1,1,1,1,1,1,1,1],
-    hs: [1,1],
+    hs: [1,1,1,1],
     size: [CELLDIM, CELLDIM],
   });
   sprites.faces = createSprite({
@@ -491,6 +625,39 @@ function neighborVisible(x, y) {
   return false;
 }
 
+const PROGRESS_H = 8;
+function drawProgress(x, y, cell, color) {
+  let z = Z.CELLS + 1;
+  let x0 = x + 2;
+  let x1 = x + CELLDIM - 2;
+  let y0 = y + CELLDIM - 2 - PROGRESS_H;
+  let y1 = y + CELLDIM - 2;
+  drawRect(x0, y0, x1, y1, z, color);
+  x0++;
+  x1--;
+  y0++;
+  y1--;
+  z+=0.1;
+  let w = x1 - x0;
+  let pmax = cell.just_advanced ? cell.last_progress_max : cell.progress_max;
+  let desired_progress = cell.just_advanced ? 1 : cell.progress / cell.progress_max;
+  let interp_progress = game_state.lazyInterp(`dp_${x}_${y}`,
+    desired_progress, 200, easeInOut);
+  if (cell.just_advanced && interp_progress === 1) {
+    cell.just_advanced = false;
+    game_state.lazyInterpReset(`dp_${x}_${y}`, 0);
+  }
+  let p = round(interp_progress * w);
+  p = clamp(p, cell.progress ? 1 : 0, cell.progress < cell.progress_max ? w - 1 : w);
+  if (p !== w) {
+    drawRect(x0 + p, y0, x1, y1, z, bg_color);
+    for (let ii = 1; ii < pmax; ++ii) {
+      let xx = x0 + round(ii / cell.progress_max * w);
+      drawLine(xx + 0.5, y0, xx + 0.5, y1, z+0.1, 1, 1, color);
+    }
+  }
+}
+
 function drawBoard() {
   let { board, w, h, selected_die, dice, turn_idx } = game_state;
   let any_selected = selected_die !== null;
@@ -502,7 +669,8 @@ function drawBoard() {
       }
       let cell = board[yy][xx];
       let type = CELL_TYPES[cell.type];
-      if (neighborVisible(xx+1, yy)) {
+      let eff_type = cell.getEffType();
+      if (neighborVisible(xx+1, yy) && !eff_type.wide) {
         let cellright = board[yy][xx+1];
         let typeright = CELL_TYPES[cellright.type];
         let interior = type.indoors && typeright.indoors;
@@ -531,10 +699,9 @@ function drawBoard() {
           color: fg_color,
         });
       }
-      let eff_type = cell.getEffType();
       let die_at = game_state.freeDieAt([xx, yy]);
       let err;
-      let cell_selectable = any_selected && eff_type.need_face === dice[selected_die].getFace() &&
+      let cell_selectable = any_selected && faceMatch(eff_type.need_face, dice[selected_die].getFace()) &&
         (!eff_type.check || !(err = eff_type.check(game_state, cell)));
       let die_selectable = die_at !== -1 && (!any_selected || selected_die === die_at);
       let frame = eff_type.type_id;
@@ -574,12 +741,18 @@ function drawBoard() {
         text = text(game_state, cell);
       }
       let used = cell.used_idx === turn_idx;
+      let title_color_font = used ? fg_color_font_used : fg_color_font;
+      let title_color = used ? fg_color_used : fg_color;
       if (text) {
+        let text_w = CELLDIM;
+        if (eff_type.wide && !cell_selectable) {
+          text_w += CELLDIM;
+        }
         font.draw({
           x: x + 1, y, z: Z.CELLS+1,
-          w: CELLDIM,
+          w: text_w,
           align: font.ALIGN.HCENTER,
-          color: used ? fg_color_font_used : fg_color_font,
+          color: title_color_font,
           text: text.toUpperCase(),
         });
       }
@@ -588,13 +761,35 @@ function drawBoard() {
           x: x + 1, y: y + 1, z: Z.CELLS+1,
           w: CELLDIM, h: CELLDIM,
           align: font.ALIGN.HVCENTER | font.ALIGN.HWRAP,
-          color: used ? fg_color_font_used : fg_color_font,
+          color: title_color_font,
           text: err.toUpperCase(),
         });
       }
+      if (eff_type.show_resources) {
+        let value = cell.resources;
+        font.draw({
+          x: x - 2, y: y, z: Z.CELLS+1,
+          w: CELLDIM, h: CELLDIM,
+          align: font.ALIGN.HRIGHT | font.ALIGN.HWRAP | font.ALIGN.VBOTTOM,
+          style: font_style_currency,
+          size: ui.font_height,
+          text: `${value}`,
+        });
+      }
+      if (eff_type.currency) {
+        let value = game_state[eff_type.currency];
+        font.draw({
+          x: x + 1, y: y - 2, z: Z.CELLS+1,
+          w: CELLDIM, h: CELLDIM,
+          align: font.ALIGN.HCENTER | font.ALIGN.HWRAP | font.ALIGN.VBOTTOM,
+          style: font_style_currency,
+          size: ui.font_height * 2,
+          text: `${value}`,
+        });
+      }
       if (!used && eff_type.need_face !== undefined) {
-        // no dice in it at the moment
         let color = any_selected && !cell_selectable ? fg_color_disabled : fg_color;
+        // no dice in it at the moment
         sprites.faces.draw({
           x, y, z: Z.CELLS + 1,
           frame: 10,
@@ -613,6 +808,9 @@ function drawBoard() {
           color,
         });
       }
+      if (cell.explored && cell.progress_max) {
+        drawProgress(x, y, cell, title_color);
+      }
     }
   }
 }
@@ -621,11 +819,12 @@ let die_pos = vec2();
 function drawDice() {
   let [x0, y0] = view_origin;
   let { dice, selected_die } = game_state;
-  let z = Z.DICE;
   for (let ii = 0; ii < dice.length; ++ii) {
+    let z = Z.DICE;
     let die = dice[ii];
     if (die.lerp_to) {
       v2lerp(die_pos, easeInOut(die.lerp_t, 2), die.pos, die.lerp_to);
+      z += 5;
     } else {
       v2copy(die_pos, die.pos);
     }
@@ -673,18 +872,31 @@ function drawDice() {
 
 function statePlay(dt) {
   camera2d.setAspectFixed(game_width, game_height);
-  gl.clearColor(0, 0, 0, 0);
+  gl.clearColor(bg_color[0], bg_color[1], bg_color[2], 0);
 
   game_state.tick(dt);
   drawBoard();
   drawDice();
 
+  let button_w = 200;
   if (ui.button({
-    x: camera2d.x1() - ui.button_width - 4,
+    x: camera2d.x1() - button_w - 4,
     y: camera2d.y1() - ui.button_height - 4,
-    text: game_state.allDiceUsed() ? 'NEXT TURN' : 'Next Turn',
+    w: button_w,
+    text: game_state.allDiceUsed() ? 'NEXT TURN' : 'Next Turn (Pass)',
   }) || keyDownEdge(KEYS.N) || keyDownEdge(KEYS.RETURN)) {
-    game_state.nextTurn();
+    if (game_state.kitchenAvailable()) {
+      ui.modalDialog({
+        text: 'Hint: You can use any one die to PREP the Kitchen in order to ASSIGN any' +
+          ' other die to any face.  Are you sure you wish to pass your turn?',
+        buttons: {
+          Yes: game_state.nextTurn.bind(game_state),
+          No: null,
+        },
+      });
+    } else {
+      game_state.nextTurn();
+    }
   }
 }
 

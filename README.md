@@ -18,7 +18,7 @@ Dice Settlers
     * [REROLL] Exercise Room (reroll a die)
     * [UPGRADE] Upgrade Chamber (2x1) (combine 2 dice to power up faces)
     * [CUDDLE] Cuddle Room (2x1) (takes 2 dice, get one die back each turn for 3 turns)
-    * [REPLACE] Library (replace a face with the specified book (not necessarily level 1))
+    * [REPLACE] Library (2x1) (replace a face with the specified book (not necessarily level 1))
     * [POETRY] Parlor (Entertain causes +XP to all non-entertainer dice)
     * only one of:
       * storage for stone/wood/seeds/crops
@@ -77,13 +77,28 @@ Dice Settlers
     * in fixed turn limit, with high score list?  Not very satisfying...
     * Goal of a particular amount of money (something to buy in the shop to win the game)
 
-* TODO
-  * Draw map
-    * Names on rooms, active dice bright / glowing
-  * Select die
-    * Names hide / dim, just show actions available on each space
-  * Or: shift click or double-tap a slot, dice is auto-assigned
-  * Generally: advance, show status
+* TODO Next
+  * Farming:
+    * gain crops upon harvest finishing
+  * Floaters with currency changes
+  * XP and levelup, with floaters
+  * Gather wood/stone
+  * Kitchen menu
+  * Build menu
+  * Sell crops at port
+  * Buy seeds at shop
   * Exceptions:
     * Build: have to choose thing to build, then open space
     * Buy / Sell: Choose stuff
+
+* Polish:
+  * TODO: floaters
+  * monochrome button (look like wood / nails in corners?)
+  * Undo non-random placements = kitchen / cuddle / upgrade, just hold the die without using them until both sides are full
+  * tooltips
+    * showing dice faces
+    * describing room function/etc
+  * Active dice pulse glowing
+  * shift click or double-tap a slot if auto-assignable die
+  * vignette
+  * background behind active dice should match actual bg_color (easiest: dual tint?  just hard-code when done?)
