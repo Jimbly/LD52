@@ -97,7 +97,7 @@ let sprites = {};
 let font;
 
 const level_def = {
-  seed: 'test',
+  seed: 'test1',
   w: 16, h: 14,
 };
 
@@ -525,7 +525,7 @@ const CELL_TYPES = [{
   },
 }, {
   name: 'Forest',
-  label: 'Forest',
+  label: '',
   action: 'Gather',
   gather_currency: 'wood',
   init: resourceInit,
@@ -536,7 +536,7 @@ const CELL_TYPES = [{
   show_resources: true,
 }, {
   name: 'Quarry',
-  label: 'Quarry',
+  label: '',
   action: 'Gather',
   gather_currency: 'stone',
   init: resourceInit,
@@ -1479,6 +1479,18 @@ class GameState {
   setExplored(pos) {
     let cell = this.board[pos[1]][pos[0]];
     cell.explored = true;
+    if (CELL_TYPES[cell.type].init === templeInit) {
+      // explore all temples
+      // TODO: Dialog
+      this.board.forEach((row) => {
+        row.forEach((cell2) => {
+          if (CELL_TYPES[cell2.type].init === templeInit) {
+            cell2.explored = true;
+            cell2.init(this);
+          }
+        });
+      });
+    }
     cell.init(this);
   }
   setCell(pos, type) {
@@ -2062,7 +2074,7 @@ function statePlay(dt) {
     x: camera2d.x1() - button_w - 4,
     y: camera2d.y1() - ui.button_height - 4,
     w: button_w,
-    text: game_state.allDiceUsed() ? 'NEXT TURN' : 'Next Turn (Pass)',
+    text: game_state.allDiceUsed() ? '[N]EXT TURN' : '[N]ext Turn (Pass)',
     disabled,
   }) || !disabled && (keyDownEdge(KEYS.N) || keyDownEdge(KEYS.RETURN))) {
     if (game_state.kitchenAvailable() && !engine.DEBUG) {
