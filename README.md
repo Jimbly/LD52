@@ -78,7 +78,6 @@ Dice Settlers
     * Goal of a particular amount of money (something to buy in the shop to win the game)
 
 * TODO Next
-  * XP and levelup, with floaters
   * Gather wood/stone
   * Kitchen menu
   * Build menu

@@ -209,8 +209,8 @@ const CELL_TYPES = [{
   },
   activate: function (game_state, cell, die) {
     let dec_seeds = cell.crop_stage === 0 && cell.progress === 0;
-    cell.progress += die.level;
-    if (cell.progress >= cell.progress_max) {
+    let [advanced, floaters] = cell.doProgress(game_state, die);
+    if (advanced) {
       cell.crop_stage++;
       cell.just_advanced = true;
       cell.last_progress_max = cell.progress_max;
@@ -245,6 +245,7 @@ const CELL_TYPES = [{
       }
       game_state.resourceMod(cell, 'seeds', -1);
     }
+    floaters.forEach((f) => game_state.addFloater(f));
   },
   indoors: false,
   need_face: Face.Farm,
@@ -335,6 +336,11 @@ CELL_TYPES.forEach((a, idx) => {
   a.type_id = idx;
 });
 
+const MAX_LEVEL = 8;
+function xpForNextLevel(level) {
+  return level * level;
+}
+
 class Cell {
   constructor(x, y) {
     this.pos = [x, y];
@@ -351,27 +357,63 @@ class Cell {
   getEffType() {
     return CELL_TYPES[this.explored ? this.type : CellType.Unexplored];
   }
+
+  doProgress(game_state, die) {
+    let left = this.progress_max - this.progress;
+    let face_state = die.getFaceState();
+    let prog = min(left, face_state.level);
+    this.progress += prog;
+    let floaters = [];
+    if (face_state.level !== MAX_LEVEL) {
+      face_state.xp += prog;
+      floaters.push({
+        pos: this.pos,
+        text: `+${prog} XP`,
+      });
+      if (face_state.xp >= face_state.xp_next) {
+        face_state.xp -= face_state.xp_next;
+        face_state.level++;
+        face_state.xp_next = xpForNextLevel(face_state.level);
+        floaters.push({
+          pos: this.pos,
+          text: 'Face level up!',
+        });
+      }
+    }
+    return [this.progress === this.progress_max, floaters];
+  }
 }
 
-const MAX_LEVEL = 8;
-function xpForNextLevel(level) {
-  return level * level;
+class FaceState {
+  constructor(type) {
+    this.type = type;
+    this.level = 1;
+    if (engine.DEBUG) {
+      //this.level = 8;
+    }
+    this.xp = 0;
+    this.xp_next = xpForNextLevel(this.level);
+  }
+}
+
+function newFace(type) {
+  return new FaceState(type);
 }
 
 class Die {
   constructor(pos) {
-    this.faces = [Face.Explore, Face.Farm, Face.Farm, Face.Gather, Face.Build, Face.Trade];
+    this.faces = [Face.Explore, Face.Farm, Face.Farm, Face.Gather, Face.Build, Face.Trade].map(newFace);
     this.pos = [pos[0],pos[1]];
     this.bedroom = [pos[0],pos[1]];
     this.cur_face = 1;
-    this.level = 1;
-    this.xp = 0;
-    this.xp_next = xpForNextLevel(this.level);
     this.lerp_to = null;
     this.lerp_t = 0;
     this.used = false;
   }
   getFace() {
+    return this.faces[this.cur_face].type;
+  }
+  getFaceState() {
     return this.faces[this.cur_face];
   }
 }
@@ -401,9 +443,6 @@ class GameState {
       [6,6],
     ].forEach((pos) => {
       let die = new Die(pos);
-      if (engine.DEBUG) {
-        die.level = 8;
-      }
       this.dice.push(die);
       this.setInitialCell(pos, CellType.Bedroom);
     });
@@ -883,7 +922,7 @@ function drawBoard() {
   }
 }
 
-const FLOATER_TIME = 1500;
+const FLOATER_TIME = 2000;
 const FLOATER_YFLOAT = 64;
 const FLOATER_DELAY = 250;
 const FLOATER_FADE = 250;
@@ -938,7 +977,8 @@ function drawDice() {
     let color2 = selected ? fg_color : bg_color;
     let font_color = selected ? fg_color_font : bg_color_font;
 
-    let show_xp = die.level < MAX_LEVEL && (die.xp || die.level > 1);
+    let face_state = die.getFaceState();
+    let show_xp = face_state.level < MAX_LEVEL && (face_state.xp || face_state.level > 1);
     sprites.faces.draw({
       x, y, z,
       frame: show_xp ? 9: 8,
@@ -953,18 +993,18 @@ function drawDice() {
     }
     sprites.faces.draw({
       x, y, z: z + 1,
-      frame: die.getFace(),
+      frame: face_state.type,
       color: color2,
     });
     font.draw({
       x: x + 43,
       y: y + 14,
       z: z + 3,
-      text: `${die.level}`,
+      text: `${face_state.level}`,
       color: font_color,
     });
     if (show_xp) {
-      let w = clamp(round(die.xp / die.xp_next * 33), die.xp ? 1 : 0, 32);
+      let w = clamp(round(face_state.xp / face_state.xp_next * 33), face_state.xp ? 1 : 0, 32);
       drawLine(x + 16, y + 49.5, x + 16 + w, y + 49.5, z + 2, 1, 1, color2);
     }
   }
