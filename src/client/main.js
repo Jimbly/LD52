@@ -305,6 +305,20 @@ function tradeDiscount(level) {
   return 0;
 }
 
+function trainXP(level) {
+  return [
+    0, // not used
+    2,
+    2,
+    3,
+    3,
+    3,
+    4,
+    4,
+    0, // not used
+  ][level];
+}
+
 let CURRENCY_TO_FRAME;
 function drawCurrency(game_state, currency, x, y, z) {
   sprites.cells.draw({
@@ -584,12 +598,14 @@ const CELL_TYPES = [{
   need_face: Face.Trade,
   activate: marketActivate,
 }, {
+  // TODO: implement
   name: 'TownEntertain',
   label: 'Square',
   action: 'Play',
   indoors: true,
   need_face: Face.Entertain,
 }, {
+  // TODO: implement and spawn
   name: 'Ruin',
   label: 'Ruin',
   action: 'Explore',
@@ -600,6 +616,19 @@ const CELL_TYPES = [{
   label: 'Study',
   action: 'Study',
   indoors: true,
+  need_face: Face.Any,
+  check: function (game_state, cell, die) {
+    if (die.getFaceState().level >= MAX_LEVEL) {
+      return 'MAX\nLevel';
+    }
+    return null;
+  },
+  activate: function (game_state, cell, die) {
+    cell.progress = 0;
+    cell.progress_max = trainXP(die.getFaceState().level);
+    cell.doProgress(game_state, die, true);
+    cell.progress_max = 0;
+  },
 }, {
   name: 'Crop',
   init: function (game_state, cell) {
@@ -676,10 +705,26 @@ const CELL_TYPES = [{
   need_face: Face.Farm,
 }, {
   name: 'Reroll',
-  label: 'Exercise',
+  label: 'Gym',
   action: 'Reroll',
   indoors: true,
   need_face: Face.Any,
+  activate: function (game_state, cell, die) {
+    let anim = game_state.animation = createAnimationSequencer();
+    die.used = false;
+    die.lerp_to = die.bedroom;
+    die.lerp_t = 0;
+    anim.add(0, 300, (progress) => {
+      die.lerp_t = progress;
+      die.cur_face = floor(progress * 6);
+      if (progress === 1) {
+        v2copy(die.pos, die.lerp_to);
+        die.lerp_to = null;
+        die.lerp_t = 0;
+        die.cur_face = game_state.rand.range(6);
+      }
+    });
+  },
 }, {
   name: 'Replace',
   label: 'Library',
@@ -848,6 +893,16 @@ function bedroomCost(count) {
   return [v, 2, 0];
 }
 
+function studyCost(count) {
+  let v = pow(4, (count || 0) + 1);
+  return [2, 5, v];
+}
+
+function rerollCost(count) {
+  let v = pow(2, (count || 0) + 1);
+  return [1, v, 4];
+}
+
 function buildPlace(game_state, cell, die, entry) {
   let { cell_type } = entry;
   let type_data = CELL_TYPES[cell_type];
@@ -914,6 +969,14 @@ function buildActivate(game_state, cell, die) {
     cell_type: CellType.Crop,
     desc: 'Plant seeds to grow crops',
     cost: [5,1,0],
+  }, {
+    cell_type: CellType.Study,
+    desc: 'Train faces to gain XP',
+    cost: studyCost(counts[CellType.Study]),
+  }, {
+    cell_type: CellType.Reroll,
+    desc: 'Reroll one die per turn',
+    cost: rerollCost(counts[CellType.Reroll]),
   }];
   const SHOP_H = CELLDIM;
   const PROMPT_H = PROMPT_PAD * 5 + ui.font_height + ui.button_height + 26 +
@@ -983,7 +1046,7 @@ function buildActivate(game_state, cell, die) {
         w: CELLDIM*2,
         align: font.ALIGN.HCENTER,
         style: disabled ? font_style_disabled : font_style_normal,
-        text: `${text.toUpperCase()} #${counts[cell_type] + 1}`,
+        text: `${text.toUpperCase()} #${(counts[cell_type] || 0) + 1}`,
       });
       x += CELLDIM*2;
 
@@ -1369,13 +1432,13 @@ class GameState {
       // this.activateCell([10,6]);
 
       // Build test
-      // this.wood = 4;
-      // this.stone = 10;
-      // this.money = 10;
-      // this.dice[0].cur_face = 4;
-      // this.selectDie(0);
-      // this.activateCell([6,5]);
-      // this.setExplored([8,8]);
+      this.wood = 4;
+      this.stone = 10;
+      this.money = 10;
+      this.dice[0].cur_face = 4;
+      this.selectDie(0);
+      this.activateCell([6,5]);
+      this.setExplored([8,8]);
 
       // Forage test
       // this.selectDie(0);
@@ -1526,7 +1589,7 @@ class GameState {
     assert(cell);
     let eff_type = cell.getEffType();
     assert(faceMatch(eff_type.need_face, die.getFace()));
-    assert(!eff_type.check || !eff_type.check(this, cell));
+    assert(!eff_type.check || !eff_type.check(this, cell, die));
     assert(!this.animation);
     let anim = this.animation = createAnimationSequencer();
     die.lerp_to = pos;
@@ -1631,9 +1694,12 @@ class GameState {
 
   tick(dt) {
     this.floater_idx = 0;
-    if (this.animation) {
-      if (!this.animation.update(dt)) {
-        this.animation = null;
+    let { animation } = this;
+    if (animation) {
+      if (!animation.update(dt)) {
+        if (this.animation === animation) {
+          this.animation = null;
+        }
       } else {
         eatAllInput();
       }
@@ -1795,7 +1861,7 @@ function drawBoard() {
       let err;
       let used = cell.used_idx === turn_idx;
       let cell_selectable = any_selected && faceMatch(eff_type.need_face, dice[selected_die].getFace()) &&
-        (!eff_type.check || !(err = eff_type.check(game_state, cell))) && die_at === -1 && !used;
+        (!eff_type.check || !(err = eff_type.check(game_state, cell, dice[selected_die]))) && die_at === -1 && !used;
       let die_selectable = free_die_at !== -1; // && (!any_selected || selected_die === free_die_at);
       if (build_mode) {
         cell_selectable = false;
@@ -1841,7 +1907,7 @@ function drawBoard() {
       sprites.cells.draw({
         x, y, z: Z.CELLS,
         frame,
-        color: err || (build_mode && !cell_selectable) ? fg_color_disabled : fg_color,
+        color: err || (build_mode && !cell_selectable) || used ? fg_color_disabled : fg_color,
       });
       // Draw header
       let text;
@@ -2070,9 +2136,17 @@ function statePlay(dt) {
 
   let button_w = 200;
   let disabled = Boolean(game_state.prompt || game_state.animation);
+  let button_x = camera2d.x1() - button_w - 4;
+  let button_y = camera2d.y1() - ui.button_height - 4;
+  font.draw({
+    style: font_style_currency,
+    x: button_x, w: button_w, align: font.ALIGN.HCENTER,
+    y: button_y - ui.font_height - 4,
+    text: `Turn ${game_state.turn_idx + 1}`,
+  });
   if (ui.button({
-    x: camera2d.x1() - button_w - 4,
-    y: camera2d.y1() - ui.button_height - 4,
+    x: button_x,
+    y: button_y,
     w: button_w,
     text: game_state.allDiceUsed() ? '[N]EXT TURN' : '[N]ext Turn (Pass)',
     disabled,
