@@ -1875,6 +1875,7 @@ class GameState {
       // this.setInitialCell([7,8], CellType.CuddleLeft);
       // this.setInitialCell([8,8], CellType.CuddleRight);
       // this.setInitialCell([8,5], CellType.Bedroom);
+      // this.setInitialCell([8,4], CellType.Bedroom);
       // this.selectDie(0);
       // this.activateCell([7,8]);
       // setTimeout(() => {
@@ -1948,6 +1949,10 @@ class GameState {
       let die = dice[ii];
       if (die.used_until && this.turn_idx > die.used_until) {
         delete die.used_until;
+        if (die.is_child_of) {
+          die.is_child_of.child = null;
+          delete die.is_child_of;
+        }
       }
       if (!die.used_until) {
         die.used = false;
@@ -2278,6 +2283,7 @@ function cuddleActivate(game_state, pos_left, pos_right) {
   let die = left.child = new Die(pos, faces);
   die.pos = [pos_left[0] + 0.5, pos_left[1]];
   die.used = true;
+  die.is_child_of = left;
   game_state.dice.push(die);
 
   left_die.used_until = game_state.turn_idx;

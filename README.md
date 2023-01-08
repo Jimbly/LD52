@@ -9,7 +9,6 @@ Ludum Dare 52 Entry by Jimbly - "Dice Settlers"
 Start with: `npm start` (after running `npm i` once)
 
 * Polish / Next:
-  * cuddle room stuck busy forever
   * "last two dice" on temple only trigger if it would progress to completion
   * exploring temple should send used die back to the bunk, re-activating temple
   * reroll should never roll the same face
