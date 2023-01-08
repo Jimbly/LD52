@@ -581,10 +581,14 @@ function isProtectedFace(game_state, face_state) {
 }
 
 const CLUES = {
-  4: function (game_state) {
+  3: function (game_state) {
     game_state.clue_dir_found = true;
-    return 'Your scout overhears rumors of a great and powerful temple to the ' +
-      `${game_state.temple_dir}.`;
+    return 'Your scout overhears rumors of a great and powerful temple, it is surely your destiny to find it!';
+  },
+  6: function (game_state) {
+    game_state.clue_dir_found = true;
+    return 'More rumors of a temple, it seems likely that it is to the ' +
+      `${game_state.temple_dir} of your settlement.`;
   },
 };
 
@@ -2762,7 +2766,7 @@ function statePlay(dt) {
   drawFloaters();
   drawDice();
 
-  effectsQueue(1000, applyColors);
+  effectsQueue(5000, applyColors);
 }
 
 export function main() {
@@ -2792,6 +2796,7 @@ export function main() {
   ui_sprites.button_rollover = { name: 'pixely/button_over', ws: [24,16,24], hs: [24] };
   ui_sprites.panel = { name: 'panel_wood', ws: [12, 8, 12], hs: [11,2,11] };
   ui_sprites.color_set_shades = [1, 1, 0.5];
+  v4copy(ui.color_panel, [1,1,1,1]);
 
   if (!engine.startup({
     game_width,
