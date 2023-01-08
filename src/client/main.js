@@ -1755,6 +1755,11 @@ class GameState {
       this.setInitialCell(pair, pair[2]);
     });
 
+    this.last_roll = [];
+    for (let ii = 0; ii < this.dice.length; ++ii) {
+      this.last_roll.push(this.dice[ii].cur_face);
+    }
+
     genMap(this);
 
     this.build_mode = null;
@@ -1880,6 +1885,19 @@ class GameState {
         die.lerp_t = 0;
       }
     }
+    let new_roll;
+    let same;
+    do {
+      new_roll = [];
+      same = true;
+      for (let ii = 0; ii < dice.length; ++ii) {
+        new_roll.push(this.rand.range(6));
+        if (new_roll[ii] !== this.last_roll[ii]) {
+          same = false;
+        }
+      }
+    } while (same);
+    this.last_roll = new_roll;
     playUISound('dice');
     anim.add(0, 400, (progress) => {
       for (let ii = 0; ii < dice.length; ++ii) {
@@ -1893,7 +1911,7 @@ class GameState {
           v2copy(die.pos, die.lerp_to);
           die.lerp_to = null;
           die.lerp_t = 0;
-          die.cur_face = this.rand.range(6);
+          die.cur_face = new_roll[ii];
         }
       }
     });

@@ -14,8 +14,6 @@ Start with: `npm start` (after running `npm i` once)
     * gain XP
     * level up (always follows gain XP)
   * story pop-ups
-  * only allow foraging in ruins ("raid")? leads to stuck game state, though if no forage in meadows?
-  * re-roll dice if we got the exact same roll as last time
   * tooltips
     * showing dice faces
     * describing room function/etc - only show required die face during mouseover
