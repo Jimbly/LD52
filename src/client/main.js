@@ -1972,14 +1972,14 @@ class GameState {
       // this.activateCell([10,6]);
 
       // Build test
-      this.wood = 10;
-      this.stone = 10;
-      this.money = 10;
-      this.dice[0].cur_face = 4;
-      this.dice[1].cur_face = 4;
-      this.selectDie(0);
-      this.activateCell([6,5]);
-      this.setExplored([8,8]);
+      // this.wood = 10;
+      // this.stone = 10;
+      // this.money = 10;
+      // this.dice[0].cur_face = 4;
+      // this.dice[1].cur_face = 4;
+      // this.selectDie(0);
+      // this.activateCell([6,5]);
+      // this.setExplored([8,8]);
 
       // Forage test
       // this.selectDie(0);
@@ -2397,6 +2397,12 @@ function cuddleActivate(game_state, pos_left, pos_right) {
   // create child
   let pos = freeBedroom(game_state);
   let faces = [];
+  game_state.cuddle_idx = (game_state.cuddle_idx || 0) + 1;
+  let keep_face = 0;
+  if (game_state.cuddle_idx === 1) {
+    keep_face++;
+    faces.push(Face.Entertain);
+  }
   for (let ii = 0; ii < left_die.faces.length; ++ii) {
     faces.push(left_die.faces[ii].type);
   }
@@ -2407,7 +2413,7 @@ function cuddleActivate(game_state, pos_left, pos_right) {
     faces.push(ii);
   }
   while (faces.length > 6) {
-    let idx = game_state.rand.range(faces.length);
+    let idx = keep_face + game_state.rand.range(faces.length - keep_face);
     ridx(faces, idx);
   }
   let die = left.child = new Die(pos, faces);
