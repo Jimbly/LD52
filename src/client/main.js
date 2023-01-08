@@ -718,7 +718,7 @@ const CELL_TYPES = [{
 }, {
   name: 'Forest',
   label: '',
-  action: 'Gather',
+  action: 'Chop',
   gather_currency: 'wood',
   init: resourceInit,
   activate: resourceActivate,
@@ -728,7 +728,7 @@ const CELL_TYPES = [{
 }, {
   name: 'Quarry',
   label: '',
-  action: 'Gather',
+  action: 'Mine',
   gather_currency: 'stone',
   init: resourceInit,
   activate: resourceActivate,
@@ -1591,7 +1591,7 @@ function buildActivate(game_state, cell, die) {
           ...cell_pos,
           frame: cell_type+1,
         });
-        if (focused) {
+        if (focused && CELL_TYPES[cell_type+1].need_face) {
           sprites.faces.draw({
             ...cell_pos,
             z: z + 1,
@@ -1827,7 +1827,7 @@ class FaceState {
     this.type = type;
     this.level = 1;
     if (engine.DEBUG) {
-      this.level = 8;
+      // this.level = 8;
     }
     this.xp = 0;
     this.xp_next = xpForNextLevel(this.level);
