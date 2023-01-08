@@ -9,15 +9,8 @@ Ludum Dare 52 Entry by Jimbly - "Dice Settlers"
 Start with: `npm start` (after running `npm i` once)
 
 * Polish / Next:
-  * "last two dice" on temple only trigger if it would progress to completion
-  * exploring temple should send used die back to the bunk, re-activating temple
-  * reroll should never roll the same face
-  * floaters last longer
-  * tooltip to re-assign screen to show names of faces
-  * cuddle baby a little lower to look separate
-  * you've explored a room of the temple, it calls out to one of your specialized settlers
-  * "Build a cuddle room (2x1) where?"
   * building needs progress
+  * building gives base progress/XP to start
   * progress bars should be fixed size up to 8 of them
   * title screen / high score list (just # of turns to win)
   * SFX

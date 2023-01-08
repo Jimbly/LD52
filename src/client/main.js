@@ -123,18 +123,32 @@ const level_def = {
 
 const FACES = [{
   name: 'Farm',
+  name2: 'Farmers',
+  desc: 'FARMERS work your fields.  Sowing a field requires 1 seed.',
 }, {
   name: 'Gather',
+  name2: 'Gathers',
+  desc: 'GATHERERS HARVEST resources from forests and quarries.',
 }, {
   name: 'Explore',
+  name2: 'Explorers',
+  desc: 'EXPLORERS FORAGE in Meadows, or SCOUT unexplored areas.',
 }, {
   name: 'Trade',
+  name2: 'Traders',
+  desc: 'TRADERS BUY from the Market and SELL Crops at the Port.',
 }, {
   name: 'Build',
+  name2: 'Builders',
+  desc: 'BUILDERS use the Shed to BUILD new rooms, or BUILD existing projects.',
 }, {
   name: 'Entertain',
+  name2: 'Entertainers',
+  desc: 'ENTERTAINERS PLAY for Money, or SING to grant XP.',
 }, {
   name: 'Any',
+  name2: 'Settlers',
+  desc: 'JACK-OF-ALL-TRADES can do ANYTHING.',
 }];
 const Face = {};
 FACES.forEach((a, idx) => {
@@ -154,28 +168,23 @@ function templeInit(game_state, cell) {
 }
 
 function temple2Init(game_state, cell) {
-  cell.progress_max = 12;
+  cell.progress_max = 8;
 }
 
 function temple2Check(game_state, cell, die) {
-  if (game_state.dice.length <= 2 && templeCompleteCount(game_state) < 2) {
-    return 'Last\ntwo\ndice';
+  if (game_state.dice.length <= 2 && templeCompleteCount(game_state) < 2 &&
+    cell.progress + die.getFaceState().level >= cell.progress_max
+  ) {
+    return engine.frame_timestamp % 2000 > 1000 ? 'Bad\nidea' : 'need\nmore\ndice';
   }
   return null;
 }
 
-function templeActivate(game_state, cell, die) {
-  let { advanced } = cell.doProgress(game_state, die, true);
-  if (advanced) {
-    // TODO: dialog here?
-    game_state.addFloater({
-      pos: cell.pos,
-      text: 'Explored!',
-    });
-    cell.type += 4;
-    cell.init(game_state);
-    cell.used_idx = -1;
-  }
+function story(text) {
+  ui.modalDialog({
+    text,
+    buttons: { Ok: null },
+  });
 }
 
 function templeCompleteCount(game_state) {
@@ -269,7 +278,7 @@ function kitchenActivate(game_state, pos_left, pos_right) {
   right.used_idx = game_state.turn_idx;
   left_die.used = true;
   game_state.selected_die = right_die_idx;
-  const PROMPT_H = CELLDIM + PROMPT_PAD * 4 + ui.font_height + ui.button_height;
+  const PROMPT_H = CELLDIM + PROMPT_PAD * 5 + ui.font_height * 2 + ui.button_height;
   const PROMPT_W = (CELLDIM + PROMPT_PAD) * 6 + PROMPT_PAD;
   let z = Z.PROMPT;
   game_state.prompt = function () {
@@ -285,6 +294,7 @@ function kitchenActivate(game_state, pos_left, pos_right) {
     y += ui.font_height + PROMPT_PAD;
     let x = x0 + PROMPT_PAD;
     let done = false;
+    let focused_face = -1;
     for (let ii = 0; ii < 6; ++ii) {
       let face_state = right_die.faces[ii];
       let selected = right_die.cur_face === ii;
@@ -294,6 +304,9 @@ function kitchenActivate(game_state, pos_left, pos_right) {
         disabled_focusable: false,
       });
       let { focused, ret, spot_state } = spot_ret;
+      if (focused) {
+        focused_face = ii;
+      }
       drawDieFace(face_state, x, y, z, spot_state === SPOT_STATE_DOWN, selected, focused);
       if (ret && !done) {
         done = true;
@@ -303,6 +316,19 @@ function kitchenActivate(game_state, pos_left, pos_right) {
       x += CELLDIM + PROMPT_PAD;
     }
     y += CELLDIM + PROMPT_PAD;
+
+    if (focused_face !== -1) {
+      let face_type = right_die.faces[focused_face].type;
+      font.draw({
+        x: x0 + PROMPT_PAD, y, z,
+        w: w - PROMPT_PAD * 2,
+        align: font.ALIGN.HWRAP,
+        text: FACES[face_type].desc,
+      });
+    }
+
+    y += ui.font_height + PROMPT_PAD;
+
     if (!done && ui.buttonText({
       text: 'Cancel',
       x: x0 + w - ui.button_width - PROMPT_PAD,
@@ -849,6 +875,7 @@ const CELL_TYPES = [{
     die.lerp_to = die.bedroom;
     die.lerp_t = 0;
     playUISound('die');
+    let not = die.cur_face;
     anim.add(0, 300, (progress) => {
       die.lerp_t = progress;
       die.cur_face = floor(progress * 6);
@@ -856,7 +883,9 @@ const CELL_TYPES = [{
         v2copy(die.pos, die.lerp_to);
         die.lerp_to = null;
         die.lerp_t = 0;
-        die.cur_face = game_state.rand.range(6);
+        do {
+          die.cur_face = game_state.rand.range(6);
+        } while (die.cur_face === not);
       }
     });
   },
@@ -1176,6 +1205,34 @@ CURRENCY_TO_FRAME = {
   crop: CellType.StorageCrop,
 };
 
+function templeActivate(game_state, cell, die) {
+  let { advanced } = cell.doProgress(game_state, die, true);
+  if (advanced) {
+    game_state.addFloater({
+      pos: cell.pos,
+      text: 'Explored!',
+    });
+
+    let anim = game_state.animation = createAnimationSequencer();
+    die.lerp_to = die.bedroom;
+    die.lerp_t = 0;
+    anim.add(0, 300, (progress) => {
+      die.lerp_t = progress;
+      if (progress === 1) {
+        v2copy(die.pos, die.lerp_to);
+        die.lerp_to = null;
+        die.lerp_t = 0;
+        story('Your explorer discovered a secret room in the temple,' +
+          ` it calls out to your experienced ${FACES[CELL_TYPES[cell.type].need_face].name2.toUpperCase()}.`);
+      }
+    });
+
+    cell.type += 4;
+    cell.init(game_state);
+    cell.used_idx = -1;
+  }
+}
+
 function freeBedroom(game_state) {
   let rooms = [];
   game_state.board.forEach((row) => {
@@ -1260,7 +1317,7 @@ function buildPlace(game_state, cell, die, entry) {
       style: font_style_normal,
       x: x0 + PROMPT_PAD, y: y + (ui.button_height - ui.font_height)/2,
       z, w: w - ui.button_width - PROMPT_PAD*2, align: font.ALIGN.HCENTER,
-      text: `Build ${label} where?`,
+      text: `Build ${label}${entry.wide ? ' (2x1)' : ''} where?`,
     });
     if (ui.buttonText({
       text: 'Back',
@@ -1859,13 +1916,13 @@ class GameState {
       // this.activateCell([10,6]);
 
       // Build test
-      // this.wood = 10;
-      // this.stone = 10;
-      // this.money = 10;
-      // this.dice[0].cur_face = 4;
-      // this.selectDie(0);
-      // this.activateCell([6,5]);
-      // this.setExplored([8,8]);
+      this.wood = 10;
+      this.stone = 10;
+      this.money = 10;
+      this.dice[0].cur_face = 4;
+      this.selectDie(0);
+      this.activateCell([6,5]);
+      this.setExplored([8,8]);
 
       // Forage test
       // this.selectDie(0);
@@ -2281,7 +2338,7 @@ function cuddleActivate(game_state, pos_left, pos_right) {
     ridx(faces, idx);
   }
   let die = left.child = new Die(pos, faces);
-  die.pos = [pos_left[0] + 0.5, pos_left[1]];
+  die.pos = [pos_left[0] + 0.5, pos_left[1] + 0.18];
   die.used = true;
   die.is_child_of = left;
   game_state.dice.push(die);
@@ -2630,7 +2687,7 @@ function drawBoard() {
 
 const FLOATER_TIME = 2000;
 const FLOATER_YFLOAT = 64;
-const FLOATER_DELAY = 250;
+const FLOATER_DELAY = 500;
 const FLOATER_FADE = 250;
 function drawFloaters() {
   let [x0, y0] = view_origin;
@@ -2744,16 +2801,12 @@ function drawHint() {
   if (game_state.turn_idx <= 1) {
     if (!(game_state.hint_flags & HINT_SELECTED)) {
       hint = 'Select a die in a Bunk to see where it can be used';
-    } else if (die && die.getFace() === Face.Explore) {
-      hint = 'Explorers can Forage in Meadows, or Scout unexplored areas';
-    } else if (die && die.getFace() === Face.Farm && game_state.turn_idx === 0) {
-      hint = 'Farmers work your fields.  Sowing a field requires 1 seed.';
-    } else if (die && die.getFace() === Face.Gather) {
-      hint = 'Gatherers can harvest resources from forests and quarries';
+    } else if (die) {
+      hint = FACES[die.getFace()].desc;
     }
   } else if (game_state.turn_idx === 2) {
     if (die && die.getFace() === Face.Build) {
-      hint = 'Builders can use the Shed to building, or work on existing build projects';
+      hint = FACES[die.getFace()].desc;
       game_state.hint_flags |= HINT_SELECTED_BUILDER;
     } else if (game_state.numDiceUsed() === 0 && (game_state.hint_flags & HINT_SELECTED_BUILDER)) {
       hint = 'HINT: There\'s nothing to build right now, put two dice in the' +
