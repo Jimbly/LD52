@@ -15,7 +15,6 @@ Start with: `npm start` (after running `npm i` once)
     * level up (always follows gain XP)
   * story pop-ups
   * tooltips
-    * showing dice faces
     * describing room function/etc - only show required die face during mouseover
   * unity chamber animation of merging, same for cuddle room
   * Active dice pulse glowing

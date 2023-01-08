@@ -2629,7 +2629,7 @@ function drawBoard() {
         key: `cell${xx}_${yy}`,
         x: x + 1, y: y + 1, w: CELLDIM - 1, h: CELLDIM - 1,
         def: (cell_selectable || die_selectable) ? SPOT_DEFAULT_BUTTON : SPOT_DEFAULT_BUTTON_DISABLED,
-        disabled_focusable: false,
+        disabled_focusable: true,
       });
       let { ret, focused } = spot_ret;
       if (ret) {
@@ -2644,9 +2644,11 @@ function drawBoard() {
           game_state.selectDie(free_die_at);
         }
       }
-      if (die_selectable) {
-        dice[free_die_at].focused = focused;
-        focused = false;
+      if (die_at !== -1) {
+        dice[die_at].focused = focused;
+        if (die_selectable) {
+          focused = false;
+        }
       }
       // draw cell graphics
       sprites.cells.draw({
@@ -2801,6 +2803,25 @@ function drawFloaters() {
   }
 }
 
+function dieToolTip(die, x, y) {
+  const PAD = 4;
+  let z = Z.TOOLTIP;
+  const DIEDIM = 44;
+  y += CELLDIM;
+  x = round(x - DIEDIM * 2.5);
+  let x0 = x;
+  for (let ii = 0; ii < 6; ++ii) {
+    drawDieFace(die.faces[ii], x, y - 12, z, false, false, die.cur_face === ii);
+    x += DIEDIM;
+  }
+  ui.panel({
+    x: x0 - 2,
+    w: x - x0 + 24,
+    y: y - PAD,
+    h: 48 + 3,
+  });
+}
+
 let die_pos = vec2();
 function drawDice() {
   let [x0, y0] = view_origin;
@@ -2824,7 +2845,18 @@ function drawDice() {
     let selected = selected_die === ii;
     let face_state = die.getFaceState();
 
-    drawDieFace(face_state, x, y, z, selected, die.used, focused);
+    drawDieFace(face_state, x, y, z, selected, die.used, !die.used && focused);
+    if (die.used && !focused) {
+      let spot_ret = spot({
+        key: `die${ii}`,
+        x: x + 1, y: y + 1, w: CELLDIM - 1, h: CELLDIM - 1,
+        def: SPOT_DEFAULT_BUTTON_DISABLED,
+      });
+      ({ focused } = spot_ret);
+    }
+    if (focused && !selected) {
+      dieToolTip(die, x, y);
+    }
   }
 }
 
