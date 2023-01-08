@@ -2964,7 +2964,7 @@ function drawHint() {
     }
   }
 
-  if (!hint && game_state.turn_idx > 6) {
+  if (!hint && game_state.turn_idx > 6 && !templeCompleteCount(game_state)) {
     if (!game_state.ever_built[CellType.Bedroom]) {
       hint = 'Hint: Build a 3rd Bunk (costs 4 wood, 2 stone) to make room for another settler';
     } else if (!game_state.ever_built[CellType.CuddleLeft]) {
