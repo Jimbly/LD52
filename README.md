@@ -8,7 +8,27 @@ Ludum Dare 52 Entry by Jimbly - "Dice Settlers"
 
 Start with: `npm start` (after running `npm i` once)
 
-Dice Settlers
+* Polish / Next:
+  * SFX
+    * gain resource
+    * gain XP
+    * level up (always follows gain XP)
+  * story pop-ups
+  * only allow foraging in ruins ("raid")? leads to stuck game state, though if no forage in meadows?
+  * re-roll dice if we got the exact same roll as last time
+  * tooltips
+    * showing dice faces
+    * describing room function/etc - only show required die face during mouseover
+  * unity chamber animation of merging, same for cuddle room
+  * hint at the bottom to get started
+  * Active dice pulse glowing
+  * shift click or double-tap a slot if auto-assignable die
+  * vignette
+  * background behind active dice/buttons should match actual bg_color (easiest: dual tint?  just hard-code when done?  better: postprocessing?)
+
+
+Design notes
+===
 
 * Map (hexes? squares?)
   * Rooms
@@ -73,23 +93,6 @@ Dice Settlers
   * Money amount
     * in fixed turn limit, with high score list?  Not very satisfying...
     * Goal of a particular amount of money (something to buy in the shop to win the game)
-
-* TODO Next
-  * remaining buildings
-
-* Polish:
-  * explorer icon: telescope or binocs
-  * only allow foraging in ruins ("raid")? leads to stuck game state, though if no forage in meadows?
-  * re-roll dice if we got the exact same roll as last time
-  * Undo non-random placements = kitchen / cuddle / upgrade, just hold the die without using them until both sides are full; similar undo on Port if no purchase made, but shop might have random stuff?
-  * tooltips
-    * showing dice faces
-    * describing room function/etc - only show required die face during mouseover
-  * unity chamber animation of merging, same for cuddle room
-  * Active dice pulse glowing
-  * shift click or double-tap a slot if auto-assignable die
-  * vignette
-  * background behind active dice/buttons should match actual bg_color (easiest: dual tint?  just hard-code when done?  better: postprocessing?)
 
 * Balance
   * Crops: 3+ actions, 14+ levels => 8 crops

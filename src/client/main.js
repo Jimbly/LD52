@@ -26,7 +26,13 @@ import {
 import { spriteSetGet } from 'glov/client/sprite_sets.js';
 import { createSprite } from 'glov/client/sprites.js';
 import * as ui from 'glov/client/ui.js';
-import { LINE_ALIGN, drawLine, drawRect } from 'glov/client/ui.js';
+import {
+  LINE_ALIGN,
+  drawLine,
+  drawRect,
+  playUISound,
+  uiBindSounds,
+} from 'glov/client/ui.js';
 import { mashString, randCreate, shuffleArray } from 'glov/common/rand_alea';
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { clamp, easeIn, easeInOut, easeOut, identity, lerp, ridx } from 'glov/common/util';
@@ -796,6 +802,7 @@ const CELL_TYPES = [{
     die.used = false;
     die.lerp_to = die.bedroom;
     die.lerp_t = 0;
+    playUISound('die');
     anim.add(0, 300, (progress) => {
       die.lerp_t = progress;
       die.cur_face = floor(progress * 6);
@@ -1873,7 +1880,8 @@ class GameState {
         die.lerp_t = 0;
       }
     }
-    anim.add(0, 300, (progress) => {
+    playUISound('dice');
+    anim.add(0, 400, (progress) => {
       for (let ii = 0; ii < dice.length; ++ii) {
         let die = dice[ii];
         if (!die.lerp_to) {
@@ -2705,6 +2713,12 @@ export function main() {
     return;
   }
   font = engine.font;
+
+  uiBindSounds({
+    die: ['die1', 'die2', 'die3'],
+    dice: ['dice1', 'dice2', 'dice3'],
+    button_click: ['button1', 'button2', 'button3'],
+  });
 
   ui.setFontStyles(font_style_normal, null, null, font_style_disabled);
   ui.scaleSizes(24 / 32);
