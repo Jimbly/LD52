@@ -84,7 +84,8 @@ Dice Settlers
   * Undo non-random placements = kitchen / cuddle / upgrade, just hold the die without using them until both sides are full; similar undo on Port if no purchase made, but shop might have random stuff?
   * tooltips
     * showing dice faces
-    * describing room function/etc
+    * describing room function/etc - only show required die face during mouseover
+  * unity chamber animation of merging, same for cuddle room
   * Active dice pulse glowing
   * shift click or double-tap a slot if auto-assignable die
   * vignette
@@ -92,6 +93,7 @@ Dice Settlers
 
 * Balance
   * Crops: 3+ actions, 14+ levels => 8 crops
+  * Entertain:  L1: 3 actions / 3 levels => 1.5 money;  L8: 3 actions/24 levels => 12 money
   * Seeds: cost 5 crops
   * Gather: 1 action, level === wood/stone
   * Forage: 32 level 1 forages (diminishing returns at higher levels) =

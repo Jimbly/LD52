@@ -490,6 +490,9 @@ function marketActivate(game_state, cell, die) {
         game_state.selected_die = game_state.dice.indexOf(die);
         assert.equal(game_state.dice[game_state.selected_die], die);
         game_state.activateCell(die.bedroom);
+      } else {
+        let xp_gain = tradeDiscount(die.getFaceState().level) + 1;
+        die.earnXP(game_state, xp_gain, true);
       }
       game_state.prompt = null;
     }
@@ -584,10 +587,7 @@ const CELL_TYPES = [{
     for (let key in gains) {
       game_state.resourceMod(cell, key, gains[key]);
     }
-    cell.progress = 0;
-    cell.progress_max = num_rolls;
-    cell.doProgress(game_state, die, true);
-    cell.progress_max = 0;
+    die.earnXP(game_state, num_rolls);
   },
 }, {
   name: 'Bedroom',
@@ -664,12 +664,30 @@ const CELL_TYPES = [{
   need_face: Face.Trade,
   activate: marketActivate,
 }, {
-  // TODO: implement
   name: 'TownEntertain',
   label: 'Square',
   action: 'Play',
   indoors: true,
   need_face: Face.Entertain,
+  activate: function (game_state, cell, die) {
+    let level = die.getFaceState().level;
+    let result = 0;
+    for (let ii = 0; ii < level; ++ii) {
+      if (game_state.rand.range(2)) {
+        result++;
+      }
+    }
+    if (!result) {
+      game_state.addFloater({
+        pos: cell.pos,
+        text: 'Boo!',
+      });
+    } else {
+      game_state.resourceMod(cell, 'money', result);
+    }
+    let xp_gain = tradeDiscount(die.getFaceState().level) + 1;
+    die.earnXP(game_state, xp_gain);
+  },
 }, {
   // TODO: implement and spawn
   name: 'Ruin',
@@ -690,10 +708,8 @@ const CELL_TYPES = [{
     return null;
   },
   activate: function (game_state, cell, die) {
-    cell.progress = 0;
-    cell.progress_max = trainXP(die.getFaceState().level);
-    cell.doProgress(game_state, die, true);
-    cell.progress_max = 0;
+    let xp_gain = trainXP(die.getFaceState().level);
+    die.earnXP(game_state, xp_gain);
   },
 }, {
   name: 'Crop',
@@ -1042,11 +1058,52 @@ const CELL_TYPES = [{
   init: temple2Init,
   activate: temple2Activate,
 }, {
-  name: 'Entertain',
+  name: 'Parlor',
   label: 'Parlor',
   action: 'Sing',
   indoors: true,
   need_face: Face.Entertain,
+  activate: function (game_state, cell, die) {
+    let { dice, rand } = game_state;
+    let level = die.getFaceState().level;
+    let result = 0;
+    for (let ii = 0; ii < level; ++ii) {
+      if (rand.range(3)) {
+        result++;
+      }
+    }
+
+    let xp_gain = tradeDiscount(die.getFaceState().level) + 1;
+    die.earnXP(game_state, xp_gain);
+
+    if (!result) {
+      game_state.addFloater({
+        pos: cell.pos,
+        text: 'Boo!',
+      });
+    } else {
+      let other_dice = [];
+      let rewards = [];
+      for (let ii = 0; ii < dice.length; ++ii) {
+        if (dice[ii] !== die && dice[ii].getFaceState().level < MAX_LEVEL) {
+          other_dice.push(ii);
+          rewards.push(0);
+        }
+      }
+      if (other_dice.length) {
+        shuffleArray(rand, other_dice);
+        for (let ii = 0; ii < result; ++ii) {
+          rewards[ii % other_dice.length]++;
+        }
+
+        for (let ii = 0; ii < rewards.length; ++ii) {
+          if (rewards[ii]) {
+            dice[other_dice[ii]].earnXP(game_state, rewards[ii]);
+          }
+        }
+      }
+    }
+  },
 }];
 const CellType = {};
 CELL_TYPES.forEach((a, idx) => {
@@ -1186,11 +1243,15 @@ function buildActivate(game_state, cell, die) {
     cell_type: CellType.Bedroom,
     desc: 'Room for one more die',
     cost: bedroomCost(counts[CellType.Bedroom]),
-  }, {
-    cell_type: CellType.CuddleLeft,
-    desc: '1 + 1 = 3',
-    cost: [5, 5, 0],
-  }, {
+  }];
+  if (!counts[CellType.CuddleLeft]) {
+    shop_entries.push({
+      cell_type: CellType.CuddleLeft,
+      desc: '1 + 1 = 3',
+      cost: [5, 5, 0],
+    });
+  }
+  shop_entries.push({
     cell_type: CellType.Crop,
     desc: 'Plant seeds to grow crops',
     cost: [5,1,0],
@@ -1203,18 +1264,26 @@ function buildActivate(game_state, cell, die) {
     desc: 'Train faces to gain XP',
     cost: studyCost(counts[CellType.Study]),
   }, {
+    cell_type: CellType.Parlor,
+    desc: 'Entertain other dice to grant XP',
+    cost: [12,4,21],
+  }, {
     cell_type: CellType.Reroll,
     desc: 'Reroll one die per turn',
     cost: rerollCost(counts[CellType.Reroll]),
-  }, {
-    cell_type: CellType.CombineLeft,
-    desc: 'Combine two dice',
-    cost: [3,3,15],
-  }, {
+  });
+  if (!counts[CellType.CombineLeft]) {
+    shop_entries.push({
+      cell_type: CellType.CombineLeft,
+      desc: 'Combine two dice',
+      cost: [3,3,15],
+    });
+  }
+  shop_entries.push({
     cell_type: CellType.ReplaceLeft,
     desc: 'Store and apply new a new face',
     cost: libraryCost(counts[CellType.ReplaceLeft]),
-  }];
+  });
   const SHOP_H = CELLDIM;
   const PROMPT_H = 480 - 2;
   const PROMPT_SCROLL_H = PROMPT_H - PROMPT_PAD * 3 - ui.button_height - CELLDIM + 10;
@@ -1599,6 +1668,34 @@ class Die {
   getFaceState() {
     return this.faces[this.cur_face];
   }
+
+  earnXP(game_state, xp, add_floaters) {
+    let face_state = this.getFaceState();
+    let floaters = [];
+    if (face_state.level !== MAX_LEVEL) {
+      face_state.xp += xp;
+      floaters.push({
+        pos: this.pos,
+        text: `+${xp} XP`,
+      });
+      if (face_state.xp >= face_state.xp_next) {
+        face_state.xp -= face_state.xp_next;
+        face_state.level++;
+        face_state.xp_next = xpForNextLevel(face_state.level);
+        floaters.push({
+          pos: this.pos,
+          text: 'Face level up!',
+        });
+      }
+    }
+    if (add_floaters !== false) {
+      floaters.forEach((f) => game_state.addFloater(f));
+    }
+    return {
+      floaters,
+    };
+  }
+
 }
 
 class GameState {
@@ -1707,7 +1804,6 @@ class GameState {
       //   this.activateCell([8,8]);
       // }, 500);
 
-
       // Unity test
       // this.setInitialCell([7,8], CellType.CombineLeft);
       // this.setInitialCell([8,8], CellType.CombineRight);
@@ -1717,6 +1813,17 @@ class GameState {
       //   this.selectDie(1);
       //   this.activateCell([8,8]);
       // }, 500);
+
+      // Entertain test
+      // this.dice[0].faces[0].type = Face.Entertain;
+      // this.dice[0].cur_face = 0;
+      // this.selectDie(0);
+
+      // Parlor test
+      // this.dice[0].faces[0].type = Face.Entertain;
+      // this.dice[0].cur_face = 0;
+      // this.selectDie(0);
+      // this.setInitialCell([7,8], CellType.Parlor);
     }
   }
   lazyInterpReset(key, value) {
@@ -1941,8 +2048,12 @@ class GameState {
   }
 
   addFloater(floater) {
+    if (!this.last_floater_pos || !v2same(floater.pos, this.last_floater_pos)) {
+      this.floater_idx = 0;
+    }
     floater.t = 0;
     floater.idx = this.floater_idx++;
+    this.last_floater_pos = floater.pos;
     this.floaters.push(floater);
   }
 
@@ -2051,6 +2162,9 @@ function cuddleActivate(game_state, pos_left, pos_right) {
   }
   for (let ii = 0; ii < right_die.faces.length; ++ii) {
     faces.push(right_die.faces[ii].type);
+  }
+  for (let ii = 0; ii < FACES.length; ++ii) {
+    faces.push(ii);
   }
   while (faces.length > 6) {
     let idx = game_state.rand.range(faces.length);
