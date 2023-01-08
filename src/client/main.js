@@ -196,7 +196,7 @@ function drawDieFace(face_state, x, y, z, selected, used, focused) {
   let color2 = selected ? fg_color : bg_color;
   let font_color = selected ? fg_color_font : bg_color_font;
 
-  let show_xp = face_state.level < MAX_LEVEL && (face_state.xp || face_state.level > 1);
+  let show_xp = face_state.level < MAX_LEVEL && (face_state.xp || face_state.level > 1) && !face_state.no_show_xp;
   sprites.faces.draw({
     x, y, z,
     frame: show_xp ? 9: 8,
@@ -355,6 +355,15 @@ function marketActivate(game_state, cell, die) {
     currency: 'stone',
     cost: 6 - discount,
   }];
+  for (let ii = 0; ii < discount + 1; ++ii) {
+    let face_level = 1 + game_state.rand.range(level);
+    shop_entries.push({
+      type: 'face',
+      face: game_state.rand.range(FACES.length - 1),
+      level: face_level,
+      cost: 10 * face_level - discount,
+    });
+  }
   const SHOP_H = 48;
   const PROMPT_H = PROMPT_PAD * 5 + ui.font_height + ui.button_height + 16 +
     shop_entries.length * SHOP_H;
@@ -428,9 +437,49 @@ function marketActivate(game_state, cell, die) {
           }, entry.currency, buy);
         }
         x += ui.button_width + PROMPT_PAD;
+      } else if (entry.type === 'face') {
+        // eslint-disable-next-line @typescript-eslint/no-use-before-define
+        let free_library = freeLibrary(game_state);
+        let disabled = !free_library || entry.purchased;
+        // eslint-disable-next-line @typescript-eslint/no-use-before-define
+        let face_state = newFace(entry.face);
+        face_state.level = entry.level;
+        face_state.no_show_xp = true;
+        drawDieFace(face_state, x, y - ICON_PAD + 4, z, false, disabled, false);
+        delete face_state.no_show_xp;
+        x += CELLDIM + PROMPT_PAD;
+        font.draw({
+          style: disabled ? font_style_disabled : font_style_normal,
+          x, y, z, h: SHOP_H, align: font.ALIGN.VCENTER,
+          text: `${FACES[entry.face].name} Face` +
+            `${entry.purchased ? ' (purchased)' : disabled ? ` ($${entry.cost}, requires open Library)` : ''}`,
+        });
+        x += 150;
+        if (!disabled) {
+          if (ui.buttonText({
+            text: `Buy ($${entry.cost})`,
+            x, y: y + BUTTON_PAD,
+            z,
+            w: 110,
+            disabled: game_state.money < entry.cost,
+          })) {
+            let library_cell = game_state.getCell(free_library);
+            bought_anything = true;
+            entry.purchased = true;
+            game_state.resourceMod({
+              pos: game_state.getResourcePos('money'), // TODO: map screen space to world space to show up above shop
+            }, 'money', -entry.cost);
+            library_cell.stored_face = face_state;
+            game_state.addFloater({
+              pos: library_cell.pos,
+              text: 'New face ready!',
+            });
+          }
+        }
       }
       y += SHOP_H;
     }
+
     y += PROMPT_PAD;
     if (ui.buttonText({
       text: bought_anything ? 'Done' : 'Cancel',
@@ -483,6 +532,27 @@ function forageRoll(game_state) {
   }
   let { currency } = FORAGE_RESULTS[idx];
   return currency;
+}
+
+function isProtectedFace(game_state, face_state) {
+  if (face_state.type === Face.Farm ||
+    face_state.type === Face.Gather ||
+    face_state.type === Face.Explore ||
+    face_state.type === Face.Trade
+  ) {
+    // potentially protected
+  } else {
+    return false;
+  }
+  let count = {};
+  game_state.dice.forEach((die) => {
+    die.faces.forEach((face) => {
+      if (face !== face_state) {
+        count[face.type] = (count[face.type] || 0) + 1;
+      }
+    });
+  });
+  return !count[face_state.type];
 }
 
 const CELL_TYPES = [{
@@ -733,9 +803,33 @@ const CELL_TYPES = [{
   indoors: true,
   wide: true,
   need_face: Face.Any,
+  check: function (game_state, cell, die) {
+    let rightpos = [cell.pos[0] + 1, cell.pos[1]];
+    let right = game_state.getCell(rightpos);
+    if (!right.stored_face) {
+      return 'BUY FACE\nFROM MARKET';
+    }
+    let face_state = die.getFaceState();
+    if (right.stored_face.type === face_state.type && right.stored_face.level <= face_state.level) {
+      return 'NOT\nUPGRADE';
+    }
+    if (right.stored_face.type !== face_state.type && isProtectedFace(game_state, face_state)) {
+      return `LAST\n${FACES[face_state.type].name}`;
+    }
+    return null;
+  },
+  activate: function (game_state, cell, die) {
+    let rightpos = [cell.pos[0] + 1, cell.pos[1]];
+    let right = game_state.getCell(rightpos);
+    die.faces[die.cur_face] = right.stored_face;
+    right.stored_face = null;
+  }
 }, {
   name: 'ReplaceRight',
   indoors: true,
+  init: function (game_state, cell) {
+    cell.stored_face = null;
+  },
 }, {
   name: 'StorageWood',
   indoors: false,
@@ -892,6 +986,20 @@ CURRENCY_TO_FRAME = {
   seeds: CellType.StorageSeed,
   crop: CellType.StorageCrop,
 };
+
+function freeLibrary(game_state) {
+  let { board } = game_state;
+  for (let yy = 0; yy < board.length; ++yy) {
+    let row = board[yy];
+    for (let xx = 0; xx < row.length; ++xx) {
+      let cell = row[xx];
+      if (cell.type === CellType.ReplaceRight && !cell.stored_face) {
+        return [xx, yy];
+      }
+    }
+  }
+  return null;
+}
 
 function bedroomCost(count) {
   let v = pow(4, (count - 1));
@@ -1430,6 +1538,9 @@ class GameState {
       [11,6,CellType.TownSell],
       [10,7,CellType.TownEntertain],
       [11,7,CellType.StorageMoney],
+
+      [7,8,CellType.ReplaceLeft],
+      [8,8,CellType.ReplaceRight],
     ].forEach((pair) => {
       this.setInitialCell(pair, pair[2]);
     });
@@ -1461,19 +1572,19 @@ class GameState {
       // this.activateCell([11,6]);
 
       // Buy test
-      // this.money = 25;
-      // this.dice[0].cur_face = 5;
-      // this.selectDie(0);
-      // this.activateCell([10,6]);
+      this.money = 50;
+      this.dice[0].cur_face = 5;
+      this.selectDie(0);
+      this.activateCell([10,6]);
 
       // Build test
-      this.wood = 4;
-      this.stone = 10;
-      this.money = 10;
-      this.dice[0].cur_face = 4;
-      this.selectDie(0);
-      this.activateCell([6,5]);
-      this.setExplored([8,8]);
+      // this.wood = 4;
+      // this.stone = 10;
+      // this.money = 10;
+      // this.dice[0].cur_face = 4;
+      // this.selectDie(0);
+      // this.activateCell([6,5]);
+      // this.setExplored([8,8]);
 
       // Forage test
       // this.selectDie(0);
@@ -2056,6 +2167,8 @@ function drawBoard() {
           frame: draw_need_face,
           color,
         });
+      } else if (cell.stored_face) {
+        drawDieFace(cell.stored_face, x, y, Z.CELLS + 1, true, false, false);
       }
       // Draw progress
       if (!cell.completed && cell.explored && cell.progress_max) {
