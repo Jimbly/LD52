@@ -19,6 +19,7 @@ import {
 } from 'glov/client/input.js';
 import * as net from 'glov/client/net.js';
 import { scrollAreaCreate } from 'glov/client/scroll_area';
+import * as settings from 'glov/client/settings.js';
 import {
   SPOT_DEFAULT_BUTTON,
   SPOT_DEFAULT_BUTTON_DISABLED,
@@ -384,12 +385,12 @@ function marketActivate(game_state, cell, die) {
     cost: 6 - discount,
   }];
   for (let ii = 0; ii < discount + 1; ++ii) {
-    let face_level = 1 + game_state.rand.range(level);
+    let face_level = max(2, 1 + game_state.rand.range(level));
     shop_entries.push({
       type: 'face',
       face: game_state.rand.range(FACES.length - 1),
       level: face_level,
-      cost: 10 * face_level - discount,
+      cost: max(1, 1 + face_level - discount),
     });
   }
   const SHOP_H = 48;
@@ -585,12 +586,12 @@ function isProtectedFace(game_state, face_state) {
 }
 
 const CLUES = {
-  3: function (game_state) {
+  6: function (game_state) {
     game_state.clue_dir_found = true;
     return 'Your scout overhears rumors of a great and powerful temple, it is surely your destiny to find it' +
-      ' and unlock it\'s mysteries!';
+      ' and unlock its mysteries!';
   },
-  6: function (game_state) {
+  11: function (game_state) {
     game_state.clue_dir_found = true;
     return 'More rumors of a temple, it seems likely that it is to the ' +
       `${game_state.temple_dir} of your settlement.`;
@@ -1322,7 +1323,7 @@ function buildActivate(game_state, cell, die) {
   }, {
     cell_type: CellType.Parlor,
     desc: 'Entertain other dice to grant XP',
-    cost: [12,4,21],
+    cost: [8,4,7],
   }, {
     cell_type: CellType.Reroll,
     desc: 'Reroll one die per turn',
@@ -1332,7 +1333,7 @@ function buildActivate(game_state, cell, die) {
     shop_entries.push({
       cell_type: CellType.CombineLeft,
       desc: 'Combine two dice',
-      cost: [3,3,15],
+      cost: [3,3,6],
     });
   }
   shop_entries.push({
@@ -2746,7 +2747,7 @@ function drawHint() {
     }
   } else if (game_state.turn_idx === 2) {
     if (die && die.getFace() === Face.Build) {
-      hint = 'Builders can use the Shed to start building, or work on existing build projects';
+      hint = 'Builders can use the Shed to building, or work on existing build projects';
       game_state.hint_flags |= HINT_SELECTED_BUILDER;
     } else if (game_state.numDiceUsed() === 0 && (game_state.hint_flags & HINT_SELECTED_BUILDER)) {
       hint = 'HINT: There\'s nothing to build right now, put two dice in the' +
@@ -2771,9 +2772,11 @@ function drawHint() {
       hint = 'Hint: Build a 3rd Bunk (costs 4 wood, 2 stone) to make room for another settler';
     } else if (!game_state.ever_built[CellType.CuddleLeft]) {
       hint = 'Hint: Build a Cuddle Room (costs 5 wood, 5 stone) to expand your population';
+    } else if (game_state.dice.length < 4) {
+      hint = 'Hint: Build your population up to be able to tackle the challenges ahead';
     } else if (game_state.num_explores < 6) {
       hint = 'Hint: Explore more to find clues about this world';
-    } else if (!(game_state.hint_flags & HINT_FOUND_TEMPLE)) {
+    } else if (game_state.turn_idx > 40 && !(game_state.hint_flags & HINT_FOUND_TEMPLE)) {
       hint = `Hint: Find the temple to the ${game_state.temple_dir}`;
     }
   }
@@ -2898,6 +2901,8 @@ export function main() {
     return;
   }
   font = engine.font;
+
+  settings.set('volume', 0.25);
 
   registerShader('test', { fp: 'shaders/test.fp' });
 
