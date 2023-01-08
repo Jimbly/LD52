@@ -81,6 +81,10 @@ const game_height = 480;
 
 const CELLDIM = 64;
 
+const HINT_SELECTED = 1<<0;
+const HINT_SELECTED_BUILDER = 1<<1;
+const HINT_FOUND_TEMPLE = 1<<2;
+
 const final_bg_color_default = vec4(0.15,0.1,0,1);
 const final_fg_color_default = vec4(1,0.95,0.8,1);
 const final_bg_color = vec4(0.15,0.1,0,1);
@@ -583,7 +587,8 @@ function isProtectedFace(game_state, face_state) {
 const CLUES = {
   3: function (game_state) {
     game_state.clue_dir_found = true;
-    return 'Your scout overhears rumors of a great and powerful temple, it is surely your destiny to find it!';
+    return 'Your scout overhears rumors of a great and powerful temple, it is surely your destiny to find it' +
+      ' and unlock it\'s mysteries!';
   },
   6: function (game_state) {
     game_state.clue_dir_found = true;
@@ -1775,6 +1780,8 @@ class GameState {
     this.floater_idx = 0;
     this.resource_pos = {};
     this.num_explores = 0;
+    this.hint_flags = 0;
+    this.ever_built = {};
     for (let yy = 0; yy < h; ++yy) {
       let row = [];
       for (let xx = 0; xx < w; ++xx) {
@@ -1897,7 +1904,7 @@ class GameState {
       // this.setInitialCell([7,8], CellType.Parlor);
 
       // Temple test
-      this.setExplored([11,10]);
+      // this.setExplored([2,9]);
     }
   }
   lazyInterpReset(key, value) {
@@ -2037,6 +2044,7 @@ class GameState {
     let cell = this.board[pos[1]][pos[0]];
     cell.explored = true;
     if (CELL_TYPES[cell.type].init === templeInit) {
+      this.hint_flags |= HINT_FOUND_TEMPLE;
       // explore all temples
       // TODO: Dialog
       this.board.forEach((row) => {
@@ -2065,6 +2073,7 @@ class GameState {
     }
   }
   selectDie(idx) {
+    this.hint_flags |= HINT_SELECTED;
     if (this.selected_die === idx) {
       this.selected_die = null;
     } else {
@@ -2185,6 +2194,8 @@ class GameState {
     if (wide) {
       this.setCell([pos[0]+1, pos[1]], cell_type + 1);
     }
+
+    this.ever_built[cell_type] = true;
 
     this.prompt = null;
     this.build_mode = null;
@@ -2720,6 +2731,77 @@ function applyColors() {
   });
 }
 
+function drawHint() {
+  let hint;
+  let die = game_state.dice[game_state.selected_die];
+  if (game_state.turn_idx <= 1) {
+    if (!(game_state.hint_flags & HINT_SELECTED)) {
+      hint = 'Select a die in a Bunk to see where it can be used';
+    } else if (die && die.getFace() === Face.Explore) {
+      hint = 'Explorers can Forage in Meadows, or Scout unexplored areas';
+    } else if (die && die.getFace() === Face.Farm && game_state.turn_idx === 0) {
+      hint = 'Farmers work your fields.  Sowing a field requires 1 seed.';
+    } else if (die && die.getFace() === Face.Gather) {
+      hint = 'Gatherers can harvest resources from forests and quarries';
+    }
+  } else if (game_state.turn_idx === 2) {
+    if (die && die.getFace() === Face.Build) {
+      hint = 'Builders can use the Shed to start building, or work on existing build projects';
+      game_state.hint_flags |= HINT_SELECTED_BUILDER;
+    } else if (game_state.numDiceUsed() === 0 && (game_state.hint_flags & HINT_SELECTED_BUILDER)) {
+      hint = 'HINT: There\'s nothing to build right now, put two dice in the' +
+        ' Kitchen to re-assign the right die to any face';
+    }
+  }
+
+  if (!hint && game_state.turn_idx < 2) {
+    if (!game_state.allDiceUsed()) {
+      hint = 'Use both of your dice before finishing the turn';
+    }
+  }
+
+  if (!hint && game_state.turn_idx < 4) {
+    if (game_state.allDiceUsed()) {
+      hint = 'Both dice have been used, click Next Turn or press N to continue';
+    }
+  }
+
+  if (!hint && game_state.turn_idx > 6) {
+    if (!game_state.ever_built[CellType.Bedroom]) {
+      hint = 'Hint: Build a 3rd Bunk (costs 4 wood, 2 stone) to make room for another settler';
+    } else if (!game_state.ever_built[CellType.CuddleLeft]) {
+      hint = 'Hint: Build a Cuddle Room (costs 5 wood, 5 stone) to expand your population';
+    } else if (game_state.num_explores < 6) {
+      hint = 'Hint: Explore more to find clues about this world';
+    } else if (!(game_state.hint_flags & HINT_FOUND_TEMPLE)) {
+      hint = `Hint: Find the temple to the ${game_state.temple_dir}`;
+    }
+  }
+
+  if (!hint) {
+    return;
+  }
+
+  const PROMPT_W = 480;
+  let w = PROMPT_W;
+  let x0 = camera2d.x0();
+  let y = PROMPT_PAD;
+  let z = Z.PROMPT;
+  y += font.draw({
+    style: font_style_normal,
+    x: x0 + PROMPT_PAD, y,
+    z, w: w - PROMPT_PAD*2, align: font.ALIGN.HCENTER | font.ALIGN.HWRAP,
+    text: hint,
+  }) + PROMPT_PAD;
+  ui.panel({
+    x: x0,
+    y: 0,
+    w,
+    h: y,
+    z: z - 1,
+  });
+}
+
 function statePlay(dt) {
   camera2d.setAspectFixed(game_width, game_height);
   gl.clearColor(bg_color[0], bg_color[1], bg_color[2], 0);
@@ -2765,6 +2847,10 @@ function statePlay(dt) {
   drawBoard();
   drawFloaters();
   drawDice();
+
+  if (!game_state.prompt) {
+    drawHint();
+  }
 
   effectsQueue(5000, applyColors);
 }

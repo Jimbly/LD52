@@ -9,6 +9,7 @@ Ludum Dare 52 Entry by Jimbly - "Dice Settlers"
 Start with: `npm start` (after running `npm i` once)
 
 * Polish / Next:
+  * building needs progress
   * title screen / high score list (just # of turns to win)
   * SFX
     * gain resource
