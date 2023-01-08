@@ -13,7 +13,6 @@ Start with: `npm start` (after running `npm i` once)
     * gain resource
     * gain XP
     * level up (always follows gain XP)
-  * story pop-ups
   * tooltips
     * describing room function/etc - only show required die face during mouseover
   * unity chamber animation of merging, same for cuddle room

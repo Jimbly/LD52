@@ -134,30 +134,37 @@ const level_list = [level_def];
 const FACES = [{
   name: 'Farm',
   name2: 'Farmers',
+  name3: 'Farmer',
   desc: 'FARMERS work your fields.  Sowing a field requires 1 seed.',
 }, {
   name: 'Gather',
-  name2: 'Gathers',
+  name2: 'Gatherers',
+  name3: 'Gatherer',
   desc: 'GATHERERS HARVEST resources from forests and quarries.',
 }, {
   name: 'Explore',
   name2: 'Explorers',
+  name3: 'Explorer',
   desc: 'EXPLORERS FORAGE in Meadows, or SCOUT unexplored areas.',
 }, {
   name: 'Trade',
   name2: 'Traders',
+  name3: 'Trader',
   desc: 'TRADERS BUY from the Market and SELL Crops at the Port.',
 }, {
   name: 'Build',
   name2: 'Builders',
+  name3: 'Builder',
   desc: 'BUILDERS use the Shed to BUILD new rooms, or BUILD existing projects.',
 }, {
   name: 'Entertain',
   name2: 'Entertainers',
+  name3: 'Entertainer',
   desc: 'ENTERTAINERS PLAY for Money, or SING to grant XP.',
 }, {
   name: 'Any',
   name2: 'Settlers',
+  name3: 'Jack-of-all-trades',
   desc: 'JACK-OF-ALL-TRADES can do ANYTHING.',
 }];
 const Face = {};
@@ -183,7 +190,7 @@ function temple2Init(game_state, cell) {
 
 function temple2Check(game_state, cell, die) {
   if (game_state.dice.length <= 2 && templeCompleteCount(game_state) < 2 &&
-    cell.progress + die.getFaceState().level >= cell.progress_max // && !engine.DEBUG
+    cell.progress + die.getFaceState().level >= cell.progress_max && !engine.DEBUG
   ) {
     return engine.frame_timestamp % 2000 > 1000 ? 'Bad\nidea' : 'need\nmore\ndice';
   }
@@ -212,7 +219,12 @@ function templeCompleteCount(game_state) {
 function temple2Activate(game_state, cell, die) {
   let { advanced } = cell.doProgress(game_state, die, true);
   if (advanced) {
-    // TODO: dialog here?
+    if (!templeCompleteCount(game_state)) {
+      story(`Your ${FACES[die.getFace()].name3.toUpperCase()} disappears into the temple, never to return.` +
+        '  He must be very happy in there.' +
+        '  The temple glows even more fiercely now, you must be getting close.' +
+        '  You should be... careful... about who you send into the other rooms.');
+    }
     game_state.addFloater({
       pos: cell.pos,
       text: 'Die was harvested!',
@@ -1815,7 +1827,7 @@ class FaceState {
     this.type = type;
     this.level = 1;
     if (engine.DEBUG) {
-      // this.level = 8;
+      this.level = 8;
     }
     this.xp = 0;
     this.xp_next = xpForNextLevel(this.level);
@@ -2172,7 +2184,7 @@ class GameState {
     if (CELL_TYPES[cell.type].init === templeInit) {
       this.hint_flags |= HINT_FOUND_TEMPLE;
       // explore all temples
-      // TODO: Dialog
+      story('Your explorer reports finding a giant temple, pulsating with energy.  Further investigation is required.');
       this.board.forEach((row) => {
         row.forEach((cell2) => {
           if (CELL_TYPES[cell2.type].init === templeInit) {
