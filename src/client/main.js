@@ -1916,13 +1916,13 @@ class GameState {
       // this.activateCell([10,6]);
 
       // Build test
-      this.wood = 10;
-      this.stone = 10;
-      this.money = 10;
-      this.dice[0].cur_face = 4;
-      this.selectDie(0);
-      this.activateCell([6,5]);
-      this.setExplored([8,8]);
+      // this.wood = 10;
+      // this.stone = 10;
+      // this.money = 10;
+      // this.dice[0].cur_face = 4;
+      // this.selectDie(0);
+      // this.activateCell([6,5]);
+      // this.setExplored([8,8]);
 
       // Forage test
       // this.selectDie(0);
@@ -2448,6 +2448,12 @@ function drawProgress(x, y, cell, color) {
   let x1 = x + CELLDIM - 2;
   let y0 = y + CELLDIM - 2 - PROGRESS_H;
   let y1 = y + CELLDIM - 2;
+  let pmax = cell.just_advanced ? cell.last_progress_max : cell.progress_max;
+  if (pmax <= 8) {
+    let w = pmax * 6 + 1;
+    x0 += floor((x1 - x0 - w) / 2);
+    x1 = x0 + w + 1;
+  }
   drawRect(x0, y0, x1, y1, z, color);
   x0++;
   x1--;
@@ -2455,7 +2461,6 @@ function drawProgress(x, y, cell, color) {
   y1--;
   z+=0.1;
   let w = x1 - x0;
-  let pmax = cell.just_advanced ? cell.last_progress_max : cell.progress_max;
   let desired_progress = cell.just_advanced ? cell.just_advanced : cell.progress / cell.progress_max;
   let interp_progress = game_state.lazyInterp(`dp_${x}_${y}`,
     desired_progress, 300, easeInOut);

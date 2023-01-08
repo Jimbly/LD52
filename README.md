@@ -11,7 +11,6 @@ Start with: `npm start` (after running `npm i` once)
 * Polish / Next:
   * building needs progress
   * building gives base progress/XP to start
-  * progress bars should be fixed size up to 8 of them
   * title screen / high score list (just # of turns to win)
   * SFX
     * gain resource
