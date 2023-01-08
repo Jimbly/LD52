@@ -79,7 +79,6 @@ Dice Settlers
 
 * Polish:
   * explorer icon: telescope or binocs
-  * do not allow combining last two dice!
   * only allow foraging in ruins ("raid")? leads to stuck game state, though if no forage in meadows?
   * re-roll dice if we got the exact same roll as last time
   * Undo non-random placements = kitchen / cuddle / upgrade, just hold the die without using them until both sides are full; similar undo on Port if no purchase made, but shop might have random stuff?

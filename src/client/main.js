@@ -27,7 +27,7 @@ import { spriteSetGet } from 'glov/client/sprite_sets.js';
 import { createSprite } from 'glov/client/sprites.js';
 import * as ui from 'glov/client/ui.js';
 import { LINE_ALIGN, drawLine, drawRect } from 'glov/client/ui.js';
-import { mashString, randCreate } from 'glov/common/rand_alea';
+import { mashString, randCreate, shuffleArray } from 'glov/common/rand_alea';
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { clamp, easeIn, easeInOut, easeOut, identity, lerp, ridx } from 'glov/common/util';
 import {
@@ -899,13 +899,49 @@ const CELL_TYPES = [{
     cuddleActivate(game_state, left, cell.pos);
   },
 }, {
-  name: 'UpgradeLeft',
+  name: 'CombineLeft',
+  label: 'Unity Chamber',
+  action: 'Merge',
   indoors: true,
+  wide: true,
   need_face: Face.Any,
+  check: function (game_state, cell, die) {
+    if (game_state.dice.length <= 2) {
+      return 'Last\ntwo\ndice';
+    }
+    return null;
+  },
+  activate: function (game_state, cell, die) {
+    die.used = false;
+    cell.used_idx = -1;
+    let right = [cell.pos[0]+1, cell.pos[1]];
+    let other_die = game_state.freeDieAt(right);
+    if (other_die === -1) {
+      return;
+    }
+    combineActivate(game_state, cell.pos, right);
+  },
 }, {
-  name: 'UpgradeRight',
+  name: 'CombineRight',
+  action: 'Merge',
   indoors: true,
   need_face: Face.Any,
+  check: function (game_state, cell, die) {
+    if (game_state.dice.length <= 2) {
+      return 'Cuddle\nfirst';
+    }
+    return null;
+  },
+  activate: function (game_state, cell, die) {
+    die.used = false;
+    cell.used_idx = -1;
+    let left = [cell.pos[0]-1, cell.pos[1]];
+    let other_die = game_state.freeDieAt(left);
+    if (other_die === -1) {
+      return;
+    }
+    combineActivate(game_state, left, cell.pos);
+  },
 }, {
   name: 'KitchenLeft',
   label: 'Kitchen',
@@ -1155,13 +1191,13 @@ function buildActivate(game_state, cell, die) {
     desc: '1 + 1 = 3',
     cost: [5, 5, 0],
   }, {
-    cell_type: CellType.KitchenLeft,
-    desc: 'Spend one die to reassign another',
-    cost: [4,6,2],
-  }, {
     cell_type: CellType.Crop,
     desc: 'Plant seeds to grow crops',
     cost: [5,1,0],
+  }, {
+    cell_type: CellType.KitchenLeft,
+    desc: 'Spend one die to reassign another',
+    cost: [4,6,2],
   }, {
     cell_type: CellType.Study,
     desc: 'Train faces to gain XP',
@@ -1170,6 +1206,10 @@ function buildActivate(game_state, cell, die) {
     cell_type: CellType.Reroll,
     desc: 'Reroll one die per turn',
     cost: rerollCost(counts[CellType.Reroll]),
+  }, {
+    cell_type: CellType.CombineLeft,
+    desc: 'Combine two dice',
+    cost: [3,3,15],
   }, {
     cell_type: CellType.ReplaceLeft,
     desc: 'Store and apply new a new face',
@@ -1251,9 +1291,9 @@ function buildActivate(game_state, cell, die) {
       font.draw({
         x: x + 1, y, z: z + 1,
         w: CELLDIM*2,
-        align: font.ALIGN.HCENTER,
+        align: font.ALIGN.HCENTERFIT,
         style: disabled ? font_style_disabled : font_style_normal,
-        text: `${text.toUpperCase()} #${(counts[cell_type] || 0) + 1}`,
+        text: `${text.toUpperCase()}${counts[cell_type] ? ` #${counts[cell_type] + 1}` : ''}`,
       });
       x += CELLDIM*2;
 
@@ -1666,6 +1706,17 @@ class GameState {
       //   this.selectDie(1);
       //   this.activateCell([8,8]);
       // }, 500);
+
+
+      // Unity test
+      // this.setInitialCell([7,8], CellType.CombineLeft);
+      // this.setInitialCell([8,8], CellType.CombineRight);
+      // this.selectDie(0);
+      // this.activateCell([7,8]);
+      // setTimeout(() => {
+      //   this.selectDie(1);
+      //   this.activateCell([8,8]);
+      // }, 500);
     }
   }
   lazyInterpReset(key, value) {
@@ -2015,6 +2066,47 @@ function cuddleActivate(game_state, pos_left, pos_right) {
   die.used_until = game_state.turn_idx+2;
   left.used_until = game_state.turn_idx+2;
   right.used_until = game_state.turn_idx+2;
+}
+
+function combineActivate(game_state, pos_left, pos_right) {
+  let left = game_state.getCell(pos_left);
+  let right = game_state.getCell(pos_right);
+  let { dice, rand } = game_state;
+  let left_die = dice[game_state.freeDieAt(pos_left)];
+  let right_die_idx = game_state.freeDieAt(pos_right);
+  let right_die = dice[right_die_idx];
+  left.used_idx = game_state.turn_idx;
+  right.used_idx = game_state.turn_idx;
+  left_die.used = true;
+  right_die.used = true;
+
+  // select from left
+  let left_choice = [0,1,2,3,4,5];
+  let right_choice = [0,1,2,3,4,5];
+  shuffleArray(rand, left_choice);
+  shuffleArray(rand, right_choice);
+
+  let die = new Die(left_die.bedroom);
+  die.pos = [pos_left[0] + 0.5, pos_left[1]];
+  die.used = true;
+  function dieMerge(fa, fb) {
+    if (fa.type === fb.type) {
+      fa.level = min(fa.level + fb.level, MAX_LEVEL);
+    } else {
+      fa.level = min(fa.level + 1, MAX_LEVEL);
+    }
+    fa.xp = 0;
+  }
+  for (let ii = 0; ii < 3; ++ii) {
+    die.faces[ii] = left_die.faces[ii];
+    dieMerge(die.faces[ii], right_die.faces[ii]);
+    die.faces[ii+3] = right_die.faces[ii+3];
+    dieMerge(die.faces[ii+3], left_die.faces[ii+3]);
+  }
+  game_state.dice.push(die);
+
+  ridx(game_state.dice, game_state.dice.indexOf(left_die));
+  ridx(game_state.dice, game_state.dice.indexOf(right_die));
 }
 
 
