@@ -1333,7 +1333,7 @@ function freeBedroom(game_state) {
   rooms = rooms.filter((pos) => {
     for (let ii = 0; ii < dice.length; ++ii) {
       let die = dice[ii];
-      if (v2same(die.pos, pos)) {
+      if (v2same(die.bedroom, pos)) {
         return false;
       }
     }
@@ -2002,12 +2002,12 @@ class GameState {
       // this.activateCell([7,8]);
 
       // Cuddle test
-      // this.setInitialCell([7,8], CellType.CuddleLeft);
-      // this.setInitialCell([8,8], CellType.CuddleRight);
-      // this.setInitialCell([8,5], CellType.Bedroom);
-      // this.setInitialCell([8,4], CellType.Bedroom);
-      // this.selectDie(0);
-      // this.activateCell([7,8]);
+      this.setInitialCell([7,8], CellType.CuddleLeft);
+      this.setInitialCell([8,8], CellType.CuddleRight);
+      this.setInitialCell([8,5], CellType.Bedroom);
+      this.setInitialCell([8,4], CellType.Bedroom);
+      this.selectDie(0);
+      this.activateCell([7,8]);
       // setTimeout(() => {
       //   this.selectDie(1);
       //   this.activateCell([8,8]);
