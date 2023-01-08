@@ -9,10 +9,6 @@ Ludum Dare 52 Entry by Jimbly - "Dice Settlers"
 Start with: `npm start` (after running `npm i` once)
 
 * Polish / Next:
-  * SFX
-    * gain resource
-    * gain XP
-    * level up (always follows gain XP)
   * tooltips
     * describing room function/etc - only show required die face during mouseover
   * unity chamber animation of merging, same for cuddle room

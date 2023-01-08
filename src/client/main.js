@@ -84,6 +84,8 @@ Z.UI = 150;
 Z.PROMPT = 180;
 Z.FLOATERS = 200;
 
+const FLOATER_DELAY = 500;
+
 // Virtual viewport for our game logic
 const game_width = 480;
 const game_height = 480;
@@ -228,6 +230,7 @@ function temple2Activate(game_state, cell, die) {
     game_state.addFloater({
       pos: cell.pos,
       text: 'Die was harvested!',
+      sound: 'work',
     });
     // remove die
     let idx = game_state.dice.indexOf(die);
@@ -557,6 +560,7 @@ function marketActivate(game_state, cell, die) {
             game_state.addFloater({
               pos: library_cell.pos,
               text: 'New face ready!',
+              sound: 'dingup',
             });
           }
         }
@@ -662,13 +666,8 @@ const CELL_TYPES = [{
   indoors: false,
   need_face: Face.Explore,
   activate: function (game_state, cell, die) {
-    game_state.addFloater({
-      pos: cell.pos,
-      text: 'Explored!',
-    });
-    cell.doProgress(game_state, die, true);
+    let sound;
     game_state.num_explores++;
-    game_state.setExplored(cell.pos);
     if (CLUES[game_state.num_explores]) {
       ui.modalDialog({
         title: 'Found a clue!',
@@ -677,7 +676,19 @@ const CELL_TYPES = [{
           Ok: null,
         },
       });
+      sound = 'find2';
+    } else if (CELL_TYPES[cell.type].init === templeInit) {
+      sound = 'find2';
+    } else {
+      sound = 'find1';
     }
+    game_state.addFloater({
+      pos: cell.pos,
+      text: 'Explored!',
+      sound
+    });
+    cell.doProgress(game_state, die, true);
+    game_state.setExplored(cell.pos);
   },
 }, {
   name: 'Meadow',
@@ -790,6 +801,7 @@ const CELL_TYPES = [{
       game_state.addFloater({
         pos: cell.pos,
         text: 'Boo!',
+        sound: 'work',
       });
     } else {
       game_state.resourceMod(cell, 'money', result);
@@ -864,18 +876,21 @@ const CELL_TYPES = [{
         game_state.addFloater({
           pos: cell.pos,
           text: 'Planted!',
+          sound: 'work',
         });
         cell.progress_max = TICKS_TEND;
       } else if (cell.crop_stage === 2) {
         game_state.addFloater({
           pos: cell.pos,
           text: 'Ready for harvest!',
+          sound: 'work',
         });
         cell.progress_max = TICKS_HARVEST;
       } else {
         game_state.addFloater({
           pos: cell.pos,
           text: 'Harvested!',
+          sound: 'dingup',
         });
         game_state.resourceMod(cell, 'crop', CROPS_PER_HARVEST);
         cell.init(game_state);
@@ -886,6 +901,7 @@ const CELL_TYPES = [{
         game_state.addFloater({
           pos: cell.pos,
           text: 'Planting started!',
+          sound: 'work',
         });
       }
       game_state.resourceMod(cell, 'seeds', -1);
@@ -947,6 +963,7 @@ const CELL_TYPES = [{
     let right = game_state.getCell(rightpos);
     die.faces[die.cur_face] = right.stored_face;
     right.stored_face = null;
+    playUISound('powerup');
   }
 }, {
   name: 'ReplaceRight',
@@ -1197,6 +1214,7 @@ const CELL_TYPES = [{
       game_state.addFloater({
         pos: cell.pos,
         text: 'Boo!',
+        sound: 'work',
       });
     } else {
       let other_dice = [];
@@ -1288,6 +1306,7 @@ function templeActivate(game_state, cell, die) {
     game_state.addFloater({
       pos: cell.pos,
       text: 'Explored!',
+      sound: 'find2',
     });
 
     backToBunk(game_state, die, () => {
@@ -1642,7 +1661,7 @@ function buildActivate(game_state, cell, die) {
 function resourceActivate(game_state, cell, die) {
   cell.progress = 0;
   cell.progress_max = cell.resources;
-  let { advanced, prog } = cell.doProgress(game_state, die, true);
+  let { advanced, prog, floaters } = cell.doProgress(game_state, die, false);
   // eslint-disable-next-line @typescript-eslint/no-invalid-this
   let { gather_currency } = this;
   game_state.resourceMod(cell, gather_currency, prog);
@@ -1653,10 +1672,12 @@ function resourceActivate(game_state, cell, die) {
       pos: cell.pos,
       // eslint-disable-next-line @typescript-eslint/no-invalid-this
       text: `${this.label} Cleared!`,
+      sound: 'work',
     });
     cell.type = CellType.Meadow;
     cell.init(game_state);
   }
+  floaters.forEach((floater) => game_state.addFloater(floater));
 }
 
 const DX = [-1,1,0,0];
@@ -1794,26 +1815,7 @@ class Cell {
     let face_state = die.getFaceState();
     let prog = min(left, face_state.level);
     this.progress += prog;
-    let floaters = [];
-    if (face_state.level !== MAX_LEVEL) {
-      face_state.xp += prog;
-      floaters.push({
-        pos: this.pos,
-        text: `+${prog} XP`,
-      });
-      if (face_state.xp >= face_state.xp_next) {
-        face_state.xp -= face_state.xp_next;
-        face_state.level++;
-        face_state.xp_next = xpForNextLevel(face_state.level);
-        floaters.push({
-          pos: this.pos,
-          text: 'Face level up!',
-        });
-      }
-    }
-    if (add_floaters) {
-      floaters.forEach((f) => game_state.addFloater(f));
-    }
+    let { floaters } = die.earnXP(game_state, prog, add_floaters);
     return {
       advanced: this.progress === progress_max,
       floaters,
@@ -1865,6 +1867,7 @@ class Die {
       floaters.push({
         pos: this.pos,
         text: `+${xp} XP`,
+        sound: 'xp',
       });
       if (face_state.xp >= face_state.xp_next) {
         face_state.xp -= face_state.xp_next;
@@ -1873,6 +1876,7 @@ class Die {
         floaters.push({
           pos: this.pos,
           text: 'Face level up!',
+          sound: 'levelup',
         });
       }
     }
@@ -2310,6 +2314,7 @@ class GameState {
     this.addFloater({
       pos,
       text,
+      sound: 'work',
     });
     this[resource] += delta;
   }
@@ -2439,6 +2444,7 @@ function cuddleActivate(game_state, pos_left, pos_right) {
   die.used_until = game_state.turn_idx+2;
   left.used_until = game_state.turn_idx+2;
   right.used_until = game_state.turn_idx+2;
+  playUISound('powerup');
 }
 
 function combineActivate(game_state, pos_left, pos_right) {
@@ -2480,6 +2486,7 @@ function combineActivate(game_state, pos_left, pos_right) {
 
   ridx(game_state.dice, game_state.dice.indexOf(left_die));
   ridx(game_state.dice, game_state.dice.indexOf(right_die));
+  playUISound('powerup');
 }
 
 
@@ -2785,7 +2792,6 @@ function drawBoard() {
 
 const FLOATER_TIME = 2000;
 const FLOATER_YFLOAT = 64;
-const FLOATER_DELAY = 500;
 const FLOATER_FADE = 250;
 function drawFloaters() {
   let [x0, y0] = view_origin;
@@ -2797,6 +2803,10 @@ function drawFloaters() {
     t -= floater.idx * FLOATER_DELAY;
     if (t <= 0) {
       continue;
+    }
+    if (floater.sound) {
+      playUISound(floater.sound);
+      delete floater.sound;
     }
     if (t > FLOATER_TIME) {
       ridx(floaters, ii);
@@ -3345,6 +3355,12 @@ export function main() {
     die: ['die1', 'die2', 'die3'],
     dice: ['dice1', 'dice2', 'dice3'],
     button_click: ['button1', 'button2', 'button3'],
+    work: ['gather1', 'gather2', 'gather3', 'gather4'],
+    xp: 'dingup2',
+    levelup: 'dingup',
+    find1: 'find1',
+    find2: 'find2',
+    powerup: 'powerup',
   });
 
   ui.setFontStyles(font_style_normal, null, null, font_style_disabled);
