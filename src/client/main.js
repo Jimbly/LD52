@@ -1208,6 +1208,37 @@ const CELL_TYPES = [{
         }
       }
     }
+  }
+}, {
+  name: 'Construction',
+  action: 'Build',
+  need_face: Face.Build,
+  check: function (game_state, cell, die) {
+    if (cell.build_complete) {
+      return 'built';
+    }
+    return null;
+  },
+  activate: function (game_state, cell, die) {
+    function finishCell(cell2) {
+      cell2.type = cell2.build_type;
+      delete cell2.build_type;
+      cell2.init(game_state);
+      cell2.used_idx = -1;
+    }
+    let { advanced } = cell.doProgress(game_state, die, true);
+    if (advanced) {
+      if (cell.build_pair) {
+        if (!cell.build_pair.build_complete) {
+          cell.build_complete = true;
+          cell.progress_max = 0;
+          return;
+        }
+        finishCell(cell.build_pair);
+      }
+      finishCell(cell);
+      backToBunk(game_state, die);
+    }
   },
 }];
 const CellType = {};
@@ -1224,6 +1255,21 @@ CURRENCY_TO_FRAME = {
   crop: CellType.StorageCrop,
 };
 
+function backToBunk(game_state, die, cb) {
+  let anim = game_state.animation = createAnimationSequencer();
+  die.lerp_to = die.bedroom;
+  die.lerp_t = 0;
+  anim.add(0, 300, (progress) => {
+    die.lerp_t = progress;
+    if (progress === 1) {
+      v2copy(die.pos, die.lerp_to);
+      die.lerp_to = null;
+      die.lerp_t = 0;
+      cb?.();
+    }
+  });
+}
+
 function templeActivate(game_state, cell, die) {
   let { advanced } = cell.doProgress(game_state, die, true);
   if (advanced) {
@@ -1232,18 +1278,9 @@ function templeActivate(game_state, cell, die) {
       text: 'Explored!',
     });
 
-    let anim = game_state.animation = createAnimationSequencer();
-    die.lerp_to = die.bedroom;
-    die.lerp_t = 0;
-    anim.add(0, 300, (progress) => {
-      die.lerp_t = progress;
-      if (progress === 1) {
-        v2copy(die.pos, die.lerp_to);
-        die.lerp_to = null;
-        die.lerp_t = 0;
-        story('Your explorer discovered a secret room in the temple,' +
-          ` it calls out to your experienced ${FACES[CELL_TYPES[cell.type].need_face].name2.toUpperCase()}.`);
-      }
+    backToBunk(game_state, die, () => {
+      story('Your explorer discovered a secret room in the temple,' +
+        ` it calls out to your experienced ${FACES[CELL_TYPES[cell.type].need_face].name2.toUpperCase()}.`);
     });
 
     cell.type += 4;
@@ -1778,7 +1815,7 @@ class FaceState {
     this.type = type;
     this.level = 1;
     if (engine.DEBUG) {
-      this.level = 8;
+      // this.level = 8;
     }
     this.xp = 0;
     this.xp_next = xpForNextLevel(this.level);
@@ -1935,13 +1972,14 @@ class GameState {
       // this.activateCell([10,6]);
 
       // Build test
-      // this.wood = 10;
-      // this.stone = 10;
-      // this.money = 10;
-      // this.dice[0].cur_face = 4;
-      // this.selectDie(0);
-      // this.activateCell([6,5]);
-      // this.setExplored([8,8]);
+      this.wood = 10;
+      this.stone = 10;
+      this.money = 10;
+      this.dice[0].cur_face = 4;
+      this.dice[1].cur_face = 4;
+      this.selectDie(0);
+      this.activateCell([6,5]);
+      this.setExplored([8,8]);
 
       // Forage test
       // this.selectDie(0);
@@ -2266,8 +2304,9 @@ class GameState {
 
   finishBuild(pos) {
     let cell = this.getCell(pos);
-    let { entry } = this.build_mode;
-    let { cost, wide, cell_type } = entry;
+    let { entry, die } = this.build_mode;
+    let { cost, wide, cell_type, build_steps } = entry;
+    die.earnXP(this, 1);
     if (cost[0]) {
       this.resourceMod(cell, 'wood', -cost[0]);
     }
@@ -2278,9 +2317,18 @@ class GameState {
       this.resourceMod(cell, 'money', -cost[2]);
     }
 
-    this.setCell(pos, cell_type);
+    this.setCell(pos, CellType.Construction);
+    let left = this.getCell(pos);
+    left.progress_max = build_steps || 4;
+    left.build_type = cell_type;
     if (wide) {
-      this.setCell([pos[0]+1, pos[1]], cell_type + 1);
+      let pos_right = [pos[0]+1, pos[1]];
+      this.setCell(pos_right, CellType.Construction);
+      let right = this.getCell(pos_right);
+      right.progress_max = build_steps || 4;
+      right.build_type = cell_type + 1;
+      left.build_pair = right;
+      right.build_pair = left;
     }
 
     this.ever_built[cell_type] = true;

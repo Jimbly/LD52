@@ -9,8 +9,6 @@ Ludum Dare 52 Entry by Jimbly - "Dice Settlers"
 Start with: `npm start` (after running `npm i` once)
 
 * Polish / Next:
-  * building needs progress
-  * building gives base progress/XP to start
   * SFX
     * gain resource
     * gain XP
