@@ -8,7 +8,12 @@ import { createAnimationSequencer } from 'glov/client/animation';
 import * as camera2d from 'glov/client/camera2d.js';
 import { applyCopy, effectsQueue, registerShader } from 'glov/client/effects';
 import * as engine from 'glov/client/engine.js';
-import { fontStyle, intColorFromVec4Color } from 'glov/client/font';
+import {
+  ALIGN,
+  fontStyle,
+  intColorFromVec4Color,
+  styleColored,
+} from 'glov/client/font';
 // import { framebufferEnd } from 'glov/client/framebuffer.js';
 import {
   KEYS,
@@ -18,6 +23,8 @@ import {
   keyDownEdge,
 } from 'glov/client/input.js';
 import * as net from 'glov/client/net.js';
+import * as score_system from 'glov/client/score.js';
+import { scoresDraw } from 'glov/client/score_ui.js';
 import { scrollAreaCreate } from 'glov/client/scroll_area';
 import * as settings from 'glov/client/settings.js';
 import {
@@ -28,6 +35,7 @@ import {
 } from 'glov/client/spot';
 import { spriteSetGet } from 'glov/client/sprite_sets.js';
 import { createSprite } from 'glov/client/sprites.js';
+import * as transition from 'glov/client/transition.js';
 import * as ui from 'glov/client/ui.js';
 import {
   LINE_ALIGN,
@@ -117,9 +125,11 @@ let sprites = {};
 let font;
 
 const level_def = {
+  name: 'the',
   seed: 'test1',
   w: 16, h: 14,
 };
+const level_list = [level_def];
 
 const FACES = [{
   name: 'Farm',
@@ -173,7 +183,7 @@ function temple2Init(game_state, cell) {
 
 function temple2Check(game_state, cell, die) {
   if (game_state.dice.length <= 2 && templeCompleteCount(game_state) < 2 &&
-    cell.progress + die.getFaceState().level >= cell.progress_max
+    cell.progress + die.getFaceState().level >= cell.progress_max // && !engine.DEBUG
   ) {
     return engine.frame_timestamp % 2000 > 1000 ? 'Bad\nidea' : 'need\nmore\ndice';
   }
@@ -216,12 +226,21 @@ function temple2Activate(game_state, cell, die) {
     let count = templeCompleteCount(game_state);
     v4lerp(final_bg_color, count / 4, final_bg_color_default, [0.1,0,0,1]);
     v4lerp(final_fg_color, count / 4, final_fg_color_default, [1,0.3,0.2,1]);
-    if (count === 4) {
+    if (count === 4) { //  || engine.DEBUG) {
+      game_state.won = true;
+      score_system.setScore(0, {
+        turns: game_state.turn_idx,
+        completed: 1,
+      });
+
       ui.modalDialog({
         title: 'You win!',
         text: 'The temple has been unlocked, unlocking your path to prosperity and victory.\n\nThanks for playing!',
         buttons: {
-          Ok: null,
+          Ok: function () {
+            transition.queue(Z.TRANSITION_FINAL, transition.splitScreen(500, 4, true));
+            engine.setState(stateHighScores);
+          },
         }
       });
     }
@@ -288,7 +307,7 @@ function kitchenActivate(game_state, pos_left, pos_right) {
     let y = y0 + PROMPT_PAD;
     font.draw({
       color: fg_color_font,
-      x: x0, y: y + PROMPT_PAD, z, w, align: font.ALIGN.HCENTER,
+      x: x0, y: y + PROMPT_PAD, z, w, align: ALIGN.HCENTER,
       text: 'Yum!  Which face would you like to be active?',
     });
     y += ui.font_height + PROMPT_PAD;
@@ -322,7 +341,7 @@ function kitchenActivate(game_state, pos_left, pos_right) {
       font.draw({
         x: x0 + PROMPT_PAD, y, z,
         w: w - PROMPT_PAD * 2,
-        align: font.ALIGN.HWRAP,
+        align: ALIGN.HWRAP,
         text: FACES[face_type].desc,
       });
     }
@@ -387,7 +406,7 @@ function drawCurrency(game_state, currency, x, y, z) {
   font.draw({
     x: x + 1, y: y - 2, z: z+1,
     w: CELLDIM, h: CELLDIM,
-    align: font.ALIGN.HCENTERFIT | font.ALIGN.VBOTTOM,
+    align: ALIGN.HCENTERFIT | ALIGN.VBOTTOM,
     style: font_style_currency,
     size: ui.font_height * 2,
     text: `${eff_value}`,
@@ -435,7 +454,7 @@ function marketActivate(game_state, cell, die) {
     if (discount) {
       font.draw({
         style: font_style_normal,
-        x: x0, y: y + PROMPT_PAD, z, w, align: font.ALIGN.HCENTER | font.ALIGN.HWRAP,
+        x: x0, y: y + PROMPT_PAD, z, w, align: ALIGN.HCENTER | ALIGN.HWRAP,
         text: `Buy from Town Market\n(discount of $${discount} from Face level ${level})`,
       });
       y += ui.font_height + PROMPT_PAD + 16;
@@ -443,7 +462,7 @@ function marketActivate(game_state, cell, die) {
       y += 8;
       font.draw({
         style: font_style_normal,
-        x: x0, y: y + PROMPT_PAD, z, w, align: font.ALIGN.HCENTER,
+        x: x0, y: y + PROMPT_PAD, z, w, align: ALIGN.HCENTER,
         text: 'Buy from Town Market',
       });
       y += ui.font_height + PROMPT_PAD;
@@ -459,7 +478,7 @@ function marketActivate(game_state, cell, die) {
         x += CELLDIM + PROMPT_PAD;
         font.draw({
           style: font_style_normal,
-          x, y, z, h: SHOP_H, align: font.ALIGN.VCENTER,
+          x, y, z, h: SHOP_H, align: ALIGN.VCENTER,
           text: `${entry.currency.toUpperCase()}`
         });
         x += 64;
@@ -503,7 +522,7 @@ function marketActivate(game_state, cell, die) {
         x += CELLDIM + PROMPT_PAD;
         font.draw({
           style: disabled ? font_style_disabled : font_style_normal,
-          x, y, z, h: SHOP_H, align: font.ALIGN.VCENTER,
+          x, y, z, h: SHOP_H, align: ALIGN.VCENTER,
           text: `${FACES[entry.face].name} Face` +
             `${entry.purchased ? ' (purchased)' : disabled ? ` ($${entry.cost}, requires open Library)` : ''}`,
         });
@@ -1316,7 +1335,7 @@ function buildPlace(game_state, cell, die, entry) {
     font.draw({
       style: font_style_normal,
       x: x0 + PROMPT_PAD, y: y + (ui.button_height - ui.font_height)/2,
-      z, w: w - ui.button_width - PROMPT_PAD*2, align: font.ALIGN.HCENTER,
+      z, w: w - ui.button_width - PROMPT_PAD*2, align: ALIGN.HCENTER,
       text: `Build ${label}${entry.wide ? ' (2x1)' : ''} where?`,
     });
     if (ui.buttonText({
@@ -1417,7 +1436,7 @@ function buildActivate(game_state, cell, die) {
     drawCurrency(game_state, 'money', x_money, y - PROMPT_PAD, z);
     font.draw({
       style: font_style_normal,
-      x: x0 + PROMPT_PAD, y: y + PROMPT_PAD, z, w, align: font.ALIGN.HWRAP,
+      x: x0 + PROMPT_PAD, y: y + PROMPT_PAD, z, w, align: ALIGN.HWRAP,
       text: 'Start building what?\nRequires empty Meadow(s)',
     });
     y += ui.font_height + PROMPT_PAD + 26;
@@ -1443,7 +1462,7 @@ function buildActivate(game_state, cell, die) {
       disabled = disabled || game_state.wood < cost[0];
       font.draw({
         x: x_wood, y, z, w: CELLDIM, h: SHOP_H,
-        align: font.ALIGN.HVCENTER,
+        align: ALIGN.HVCENTER,
         size: ui.font_height * 2,
         style: game_state.wood < cost[0] ? font_style_disabled : font_style_normal,
         text: `${cost[0]}`
@@ -1452,7 +1471,7 @@ function buildActivate(game_state, cell, die) {
       disabled = disabled || game_state.stone < cost[1];
       font.draw({
         x: x_stone, y, z, w: CELLDIM, h: SHOP_H,
-        align: font.ALIGN.HVCENTER,
+        align: ALIGN.HVCENTER,
         size: ui.font_height * 2,
         style: game_state.stone < cost[1] ? font_style_disabled : font_style_normal,
         text: `${cost[1]}`
@@ -1461,7 +1480,7 @@ function buildActivate(game_state, cell, die) {
       disabled = disabled || game_state.money < cost[2];
       font.draw({
         x: x_money, y, z, w: CELLDIM, h: SHOP_H,
-        align: font.ALIGN.HVCENTER,
+        align: ALIGN.HVCENTER,
         size: ui.font_height * 2,
         style: game_state.money < cost[2] ? font_style_disabled : font_style_normal,
         text: `${cost[2]}`
@@ -1474,7 +1493,7 @@ function buildActivate(game_state, cell, die) {
       font.draw({
         x: x + 1, y, z: z + 1,
         w: CELLDIM*2,
-        align: font.ALIGN.HCENTERFIT,
+        align: ALIGN.HCENTERFIT,
         style: disabled ? font_style_disabled : font_style_normal,
         text: `${text.toUpperCase()}${counts[cell_type] ? ` #${counts[cell_type] + 1}` : ''}`,
       });
@@ -1482,7 +1501,7 @@ function buildActivate(game_state, cell, die) {
 
       font.draw({
         x, y, z, w: x_wood - x, h: SHOP_H,
-        align: font.ALIGN.HVCENTER|font.ALIGN.HWRAP,
+        align: ALIGN.HVCENTER|ALIGN.HWRAP,
         style: disabled ? font_style_disabled : font_style_normal,
         text: desc || '?',
       });
@@ -2000,6 +2019,12 @@ class GameState {
     assert(!this.animation);
     this.turn_idx++;
     this.selected_die = null;
+    if (!this.won) {
+      score_system.setScore(0, {
+        turns: this.turn_idx,
+        completed: 0,
+      });
+    }
     let { dice } = this;
     let anim = this.animation = createAnimationSequencer();
     for (let ii = 0; ii < dice.length; ++ii) {
@@ -2604,7 +2629,7 @@ function drawBoard() {
         font.draw({
           x: x + 1, y, z: Z.CELLS+1,
           w: text_w,
-          align: font.ALIGN.HCENTER,
+          align: ALIGN.HCENTER,
           color: title_color_font,
           text: text.toUpperCase(),
         });
@@ -2614,7 +2639,7 @@ function drawBoard() {
         font.draw({
           x: x + 1, y: y + 1, z: Z.CELLS+1,
           w: CELLDIM, h: CELLDIM,
-          align: font.ALIGN.HVCENTER | font.ALIGN.HWRAP,
+          align: ALIGN.HVCENTER | ALIGN.HWRAP,
           color: title_color_font,
           text: err.toUpperCase(),
         });
@@ -2625,7 +2650,7 @@ function drawBoard() {
         font.draw({
           x: x - 2, y: y, z: Z.CELLS+1,
           w: CELLDIM, h: CELLDIM,
-          align: font.ALIGN.HRIGHT | font.ALIGN.HWRAP | font.ALIGN.VBOTTOM,
+          align: ALIGN.HRIGHT | ALIGN.HWRAP | ALIGN.VBOTTOM,
           style: font_style_currency,
           alpha: build_mode ? 0.5 : 1,
           size: ui.font_height,
@@ -2639,7 +2664,7 @@ function drawBoard() {
         font.draw({
           x: x + 1, y: y - 2, z: Z.CELLS+1,
           w: CELLDIM, h: CELLDIM,
-          align: font.ALIGN.HCENTERFIT | font.ALIGN.VBOTTOM,
+          align: ALIGN.HCENTERFIT | ALIGN.VBOTTOM,
           style: font_style_currency,
           alpha: build_mode ? 0.5 : 1,
           size: ui.font_height * 2,
@@ -2711,7 +2736,7 @@ function drawFloaters() {
     }
     font.draw({
       style: font_style_floater,
-      align: font.ALIGN.HCENTER,
+      align: ALIGN.HCENTER,
       x: x0 + (floater.pos[0] + 0.5) * CELLDIM,
       y: y0 + (floater.pos[1] + 0.5) * CELLDIM - round(FLOATER_YFLOAT * easeOut(t / FLOATER_TIME, 2)) +
         floater.idx * ui.font_height,
@@ -2857,7 +2882,7 @@ function drawHint() {
   y += font.draw({
     style: font_style_normal,
     x: x0 + PROMPT_PAD, y,
-    z, w: w - PROMPT_PAD*2, align: font.ALIGN.HCENTER | font.ALIGN.HWRAP,
+    z, w: w - PROMPT_PAD*2, align: ALIGN.HCENTER | ALIGN.HWRAP,
     text: hint,
   }) + PROMPT_PAD;
   ui.panel({
@@ -2871,7 +2896,7 @@ function drawHint() {
 
 function statePlay(dt) {
   camera2d.setAspectFixed(game_width, game_height);
-  gl.clearColor(bg_color[0], bg_color[1], bg_color[2], 0);
+  gl.clearColor(bg_color[0], bg_color[1], bg_color[2], 1);
 
   if (engine.DEBUG && keyDownEdge(KEYS.R)) {
     level_def.seed = `${Math.random()}`;
@@ -2882,11 +2907,14 @@ function statePlay(dt) {
 
   let button_w = 200;
   let disabled = Boolean(game_state.prompt || game_state.animation);
+  if (game_state.turn_idx < 2 && game_state.numDiceUsed() === 0) {
+    disabled = true;
+  }
   let button_x = camera2d.x1() - button_w - 4;
   let button_y = camera2d.y1() - ui.button_height - 4;
   font.draw({
     style: font_style_currency,
-    x: button_x, w: button_w, align: font.ALIGN.HCENTER,
+    x: button_x, w: button_w, align: ALIGN.HCENTER,
     y: button_y - ui.font_height - 4,
     text: `Turn ${game_state.turn_idx + 1}`,
   });
@@ -2919,7 +2947,252 @@ function statePlay(dt) {
     drawHint();
   }
 
+  if (keyDownEdge(KEYS.ESC)) {
+    if (game_state.selected_die !== null) {
+      game_state.selected_die = null;
+    } else {
+      engine.setState(stateHighScores);
+    }
+  }
+
   effectsQueue(5000, applyColors);
+}
+
+const SCORE_COLUMNS = [
+  // widths are just proportional, scaled relative to `width` passed in
+  { name: '', width: 12, align: ALIGN.HFIT | ALIGN.HRIGHT | ALIGN.VCENTER },
+  { name: 'Name', width: 60, align: ALIGN.HFIT | ALIGN.VCENTER },
+  { name: 'Victory?', width: 24 },
+  { name: 'Turns', width: 24 },
+];
+const style_score = styleColored(null, 0xFFFFFFaa);
+const style_me = styleColored(null, 0xFFFFFFff);
+const style_header = styleColored(null, 0xFFFFFFaa);
+function myScoreToRow(row, score) {
+  row.push(score.completed ? 'Y' : 'N', score.turns);
+}
+const style_title = fontStyle(null, {
+  color: fg_color_font,
+  glow_color: 0xFFFFFF80,
+  glow_inner: -2,
+  glow_outer: 8,
+  glow_xoffs: 0,
+  glow_yoffs: 0,
+});
+
+const level_idx = 0;
+function stateHighScores() {
+  v4copy(final_fg_color, final_fg_color_default);
+  v4copy(final_bg_color, final_bg_color_default);
+  gl.clearColor(bg_color[0], bg_color[1], bg_color[2], 1);
+  let W = game_width;
+  let H = game_height;
+  camera2d.setAspectFixed(W, H);
+
+  let ld = level_list[level_idx];
+
+  let y = 8;
+  let pad = 16;
+  let button_h = ui.button_height;
+
+  font.draw({
+    x: 0, w: W, y, align: ALIGN.HCENTER,
+    size: ui.font_height * 2,
+    style: style_title,
+    text: 'Hall of Fame',
+  });
+
+  y += ui.font_height * 2 + 8;
+
+  let has_score = score_system.getScore(level_idx);
+
+  let button_w = 200;
+
+  let can_resume = game_state && game_state.turn_idx > 0 && !game_state.won;
+  let replay_text = can_resume ? 'Resume Game' : has_score ? 'Restart Game' : 'Start Game';
+
+  if (ui.buttonText({
+    x: (W - button_w)/2, y,
+    w: button_w, h: button_h,
+    text: replay_text,
+  }) || keyDownEdge(KEYS.ESC)) {
+    if (!can_resume && has_score) {
+      level_def.seed = `${Math.random()}`;
+      game_state = new GameState(level_def);
+    }
+    engine.setState(statePlay);
+  }
+  y += button_h + 8;
+
+  // pad = 8;
+  // let x = pad;
+  // let toggle_y = H - button_h - pad;
+  // if (ui.buttonImage({
+  //   img: sprite_space,
+  //   shrink: 16/button_h,
+  //   frame: settings.volume_sound ? FRAME_SOUND_ON : FRAME_SOUND_OFF,
+  //   x, y: toggle_y, h: button_h, w: button_h,
+  // })) {
+  //   settings.set('volume_sound', settings.volume_sound ? 0 : 1);
+  // }
+  // x += button_h + pad;
+  // if (ui.buttonImage({
+  //   img: sprite_space,
+  //   shrink: 16/button_h,
+  //   frame: settings.volume_music ? FRAME_MUSIC_ON : FRAME_MUSIC_OFF,
+  //   x, y: toggle_y, h: button_h, w: button_h,
+  // })) {
+  //   settings.set('volume_music', settings.volume_music ? 0 : 1);
+  // }
+
+  pad = 24;
+  scoresDraw({
+    x: pad, width: W - pad * 2,
+    y, height: H - y - pad,
+    z: Z.UI,
+    size: ui.font_height,
+    line_height: ui.font_height+2,
+    level_id: ld.name,
+    columns: SCORE_COLUMNS,
+    scoreToRow: myScoreToRow,
+    style_score,
+    style_me,
+    style_header,
+    color_line: [1,1,1,1],
+    color_me_background: [1,1,1,0.2],
+  });
+
+  effectsQueue(5000, applyColors);
+}
+
+let title_anim;
+let title_alpha = {
+  dice: 0,
+  title: 0,
+  desc: 0,
+  sub: 0,
+  button: 0,
+};
+function stateTitleInit() {
+  title_anim = createAnimationSequencer();
+  let t = title_anim.add(0, 3000, (progress) => {
+    title_alpha.dice = progress;
+  });
+  t = 300;
+  t = title_anim.add(t + 500, 300, (progress) => {
+    title_alpha.title = progress;
+  });
+  t = title_anim.add(t + 200, 1000, (progress) => {
+    title_alpha.desc = progress;
+  });
+  t = title_anim.add(t + 300, 300, (progress) => {
+    title_alpha.sub = progress;
+  });
+  title_anim.add(t + 500, 300, (progress) => {
+    title_alpha.button = progress;
+  });
+}
+function stateTitle(dt) {
+  gl.clearColor(bg_color[0], bg_color[1], bg_color[2], 1);
+  let W = game_width;
+  let H = game_height;
+  camera2d.setAspectFixed(W, H);
+  if (title_anim) {
+    if (!title_anim.update(dt)) {
+      title_anim = null;
+    } else {
+      eatAllInput();
+    }
+  }
+
+  let y = 48;
+
+  font.draw({
+    style: style_title,
+    alpha: title_alpha.title,
+    // x = 8 because for some reason not centering right?!
+    x: 7, y, w: W, align: ALIGN.HCENTER,
+    size: 48,
+    text: 'Dice Settlers',
+  });
+  y += 48;
+  font.draw({
+    color: fg_color_font,
+    alpha: title_alpha.sub,
+    x: 0, y, w: W, align: ALIGN.HCENTER,
+    text: 'By Jimb Esser in 48 hours for Ludum Dare 52',
+  });
+  y += ui.font_height + 2;
+
+  let z = Z.UI;
+
+  let diex0 = floor((W - CELLDIM * 3 - PROMPT_PAD*2)/2);
+  const levellist = [
+    3,1,5,8,2,4,
+  ];
+  for (let ii = 0; ii < 6; ++ii) {
+    if (ii === 3) {
+      y += CELLDIM;
+    }
+    let x = diex0 + (ii >= 3 ? ii - 3 : ii) * CELLDIM + PROMPT_PAD;
+    let alpha = (title_alpha.dice * 7 - ii) / 2;
+    if (alpha > 0) {
+      drawDieFace({
+        type: alpha < 1 ? floor(alpha * 6) : ii,
+        level: alpha < 1 ? levellist[floor(alpha*6)] : levellist[ii],
+        no_show_xp: true,
+      }, x, y, z);
+    }
+  }
+
+  y += CELLDIM + PROMPT_PAD * 2;
+
+  font.draw({
+    color: fg_color_font,
+    alpha: title_alpha.desc,
+    x: W/6,
+    w: W - W/6*2,
+    y, align: ALIGN.HCENTER | ALIGN.HWRAP,
+    text: 'Prophecy has foretold that destiny awaits in this new world.' +
+    '  Grow your settlement to fullfil your dreams!',
+  });
+
+  effectsQueue(5000, applyColors);
+
+  if (title_alpha.button) {
+    let button_w = 140;
+    let button_x0 = (W - button_w * 2 - PROMPT_PAD) / 2;
+    let button_h = ui.button_height;
+    let button = {
+      color: [1,1,1, title_alpha.button],
+      y: H - button_h - 48,
+      w: button_w,
+      h: button_h,
+    };
+    // let has_score = score_system.getScore(level_idx);
+    let need_new_seed = false; // has_score;
+    if (ui.button({
+      ...button,
+      x: button_x0,
+      text: need_new_seed ? 'Restart Game' : 'Play',
+    })) {
+      transition.queue(Z.TRANSITION_FINAL, transition.splitScreen(500, 4, true));
+      if (need_new_seed) {
+        level_def.seed = `${Math.random()}`;
+        game_state = new GameState(level_def);
+      }
+      engine.setState(statePlay);
+    }
+
+    if (ui.button({
+      ...button,
+      x: button_x0 + button_w + PROMPT_PAD,
+      text: 'Hall of Fame',
+    })) {
+      transition.queue(Z.TRANSITION_FINAL, transition.splitScreen(500, 4, true));
+      engine.setState(stateHighScores);
+    }
+  }
 }
 
 export function main() {
@@ -2982,5 +3255,31 @@ export function main() {
 
   init();
 
-  engine.setState(statePlay);
+  const ENCODE = 10000000;
+  function encodeScore(score) {
+    if (score.completed) {
+      return ENCODE + ENCODE - score.turns;
+    }
+    return score.turns;
+  }
+
+  function parseScore(value) {
+    let completed = (value >= ENCODE) ? 1 : 0;
+    let turns = value % ENCODE;
+    if (completed) {
+      turns = ENCODE - turns;
+    }
+    return {
+      completed,
+      turns,
+    };
+  }
+  score_system.init(encodeScore, parseScore, level_list, 'LD52');
+  score_system.updateHighScores();
+
+  stateTitleInit();
+  engine.setState(stateTitle);
+  if (engine.DEBUG) {
+    engine.setState(statePlay);
+  }
 }
