@@ -3262,7 +3262,7 @@ function stateTitle(dt) {
     w: W - W/6*2,
     y, align: ALIGN.HCENTER | ALIGN.HWRAP,
     text: 'Prophecy has foretold that destiny awaits in this new world.' +
-    '  Grow your settlement to fullfil your dreams!',
+    '  Grow your settlement to fulfill your dreams!',
   });
 
   effectsQueue(5000, applyColors);
