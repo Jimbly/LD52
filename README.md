@@ -9,6 +9,7 @@ Ludum Dare 52 Entry by Jimbly - "Dice Settlers"
 Start with: `npm start` (after running `npm i` once)
 
 * Polish / Next:
+  * title screen / high score list (just # of turns to win)
   * SFX
     * gain resource
     * gain XP
@@ -18,7 +19,7 @@ Start with: `npm start` (after running `npm i` once)
     * showing dice faces
     * describing room function/etc - only show required die face during mouseover
   * unity chamber animation of merging, same for cuddle room
-  * hint at the bottom to get started
+  * hint at the bottom to get started / current goal
   * Active dice pulse glowing
   * shift click or double-tap a slot if auto-assignable die
   * vignette

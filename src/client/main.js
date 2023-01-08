@@ -152,6 +152,13 @@ function temple2Init(game_state, cell) {
   cell.progress_max = 12;
 }
 
+function temple2Check(game_state, cell, die) {
+  if (game_state.dice.length <= 2 && templeCompleteCount(game_state) < 2) {
+    return 'Last\ntwo\ndice';
+  }
+  return null;
+}
+
 function templeActivate(game_state, cell, die) {
   let { advanced } = cell.doProgress(game_state, die, true);
   if (advanced) {
@@ -573,6 +580,14 @@ function isProtectedFace(game_state, face_state) {
   return !count[face_state.type];
 }
 
+const CLUES = {
+  4: function (game_state) {
+    game_state.clue_dir_found = true;
+    return 'Your scout overhears rumors of a great and powerful temple to the ' +
+      `${game_state.temple_dir}.`;
+  },
+};
+
 const CELL_TYPES = [{
   name: 'Unexplored', // just a tile, not actually a type
   action: 'Scout',
@@ -585,7 +600,17 @@ const CELL_TYPES = [{
       text: 'Explored!',
     });
     cell.doProgress(game_state, die, true);
+    game_state.num_explores++;
     game_state.setExplored(cell.pos);
+    if (CLUES[game_state.num_explores]) {
+      ui.modalDialog({
+        title: 'Found a clue!',
+        text: CLUES[game_state.num_explores](game_state, cell, die),
+        buttons: {
+          Ok: null,
+        },
+      });
+    }
   },
 }, {
   name: 'Meadow',
@@ -1050,6 +1075,7 @@ const CELL_TYPES = [{
   wide: true,
   tall: true,
   need_face: Face.Farm,
+  check: temple2Check,
   init: temple2Init,
   activate: temple2Activate,
 }, {
@@ -1058,6 +1084,7 @@ const CELL_TYPES = [{
   indoors: false,
   tall: true,
   need_face: Face.Build,
+  check: temple2Check,
   init: temple2Init,
   activate: temple2Activate,
 }, {
@@ -1066,6 +1093,7 @@ const CELL_TYPES = [{
   indoors: false,
   wide: true,
   need_face: Face.Gather,
+  check: temple2Check,
   init: temple2Init,
   activate: temple2Activate,
 }, {
@@ -1073,6 +1101,7 @@ const CELL_TYPES = [{
   action: 'Harvest',
   indoors: false,
   need_face: Face.Any,
+  check: temple2Check,
   init: temple2Init,
   activate: temple2Activate,
 }, {
@@ -1507,14 +1536,20 @@ function genMap(game_state) {
   let y;
   if (is_horiz) {
     x = 1 + rand.range(w - 3);
-    y = rand.range(2) ?
+    let bit = rand.range(2);
+    y = bit ?
       1 + rand.range(2) :
       h - 4 + rand.range(2);
+    game_state.temple_dir = `${bit ? 'north' : 'south'}` +
+      `${x < w/3 ? '-west' : x >= w*2/3-1 ? '-east' : ''}`;
   } else {
-    x = rand.range(2) ?
+    let bit = rand.range(2);
+    x = bit ?
       1 + rand.range(2) :
       w - 3;
     y = 1 + rand.range(h - 3);
+    game_state.temple_dir = `${y < h/3 ? 'north-' : y >= h*2/3-1 ? 'south-' : ''}` +
+      `${bit ? 'west' : 'east'}`;
   }
 
   let done = {};
@@ -1713,8 +1748,13 @@ class Die {
       floaters,
     };
   }
-
 }
+
+const FIXED_ROLLS = [
+  [0,1], // explore + farm
+  [3,1], // gather + farm
+  [4,4], // build + build
+];
 
 class GameState {
   constructor(def) {
@@ -1730,6 +1770,7 @@ class GameState {
     this.floaters = [];
     this.floater_idx = 0;
     this.resource_pos = {};
+    this.num_explores = 0;
     for (let yy = 0; yy < h; ++yy) {
       let row = [];
       for (let xx = 0; xx < w; ++xx) {
@@ -1740,11 +1781,11 @@ class GameState {
 
     this.dice = [];
     [
-      [6,7],
-      [7,7],
+      [6,7,0],
+      [7,7,1],
     ].forEach((pos) => {
       let die = new Die(pos);
-      die.cur_face = this.rand.range(6);
+      die.cur_face = FIXED_ROLLS[0][pos[2]];
       this.dice.push(die);
       this.setInitialCell(pos, CellType.Bedroom);
     });
@@ -1908,9 +1949,14 @@ class GameState {
       new_roll = [];
       same = true;
       for (let ii = 0; ii < dice.length; ++ii) {
-        new_roll.push(this.rand.range(6));
-        if (new_roll[ii] !== this.last_roll[ii]) {
+        if (this.turn_idx < FIXED_ROLLS.length) {
+          new_roll.push(FIXED_ROLLS[this.turn_idx][ii]);
           same = false;
+        } else {
+          new_roll.push(this.rand.range(6));
+          if (new_roll[ii] !== this.last_roll[ii]) {
+            same = false;
+          }
         }
       }
     } while (same && new_roll.length);
