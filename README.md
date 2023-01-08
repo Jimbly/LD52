@@ -22,7 +22,8 @@ Start with: `npm start` (after running `npm i` once)
   * Active dice pulse glowing
   * shift click or double-tap a slot if auto-assignable die
   * vignette
-  * background behind active dice/buttons should match actual bg_color (easiest: dual tint?  just hard-code when done?  better: postprocessing?)
+  * colors shift
+    * during cuddle / combine / entertain
 
 
 Design notes

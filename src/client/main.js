@@ -6,8 +6,10 @@ local_storage.setStoragePrefix('LD52'); // Before requiring anything else that m
 import assert from 'assert';
 import { createAnimationSequencer } from 'glov/client/animation';
 import * as camera2d from 'glov/client/camera2d.js';
+import { applyCopy, effectsQueue, registerShader } from 'glov/client/effects';
 import * as engine from 'glov/client/engine.js';
 import { fontStyle, intColorFromVec4Color } from 'glov/client/font';
+// import { framebufferEnd } from 'glov/client/framebuffer.js';
 import {
   KEYS,
   drag,
@@ -45,6 +47,8 @@ import {
   v2set,
   v3copy,
   v3lerp,
+  v4copy,
+  v4lerp,
   vec2,
   vec4,
 } from 'glov/common/vmath';
@@ -77,9 +81,13 @@ const game_height = 480;
 
 const CELLDIM = 64;
 
-const bg_color = vec4(0.15,0.1,0,1);
+const final_bg_color_default = vec4(0.15,0.1,0,1);
+const final_fg_color_default = vec4(1,0.95,0.8,1);
+const final_bg_color = vec4(0.15,0.1,0,1);
+const final_fg_color = vec4(1,0.95,0.8,1);
+const bg_color = vec4(0,0,0,1);
 const bg_color_font = intColorFromVec4Color(bg_color);
-const fg_color = vec4(1,0.95,0.8,1);
+const fg_color = vec4(1,1,1,1);
 const fg_color_font = intColorFromVec4Color(fg_color);
 const fg_color_disabled = v3copy(vec4(0,0,0, 0.4), fg_color);
 const fg_color_used = v3lerp(vec4(0,0,0, 1), 0.3, bg_color, fg_color);
@@ -158,7 +166,7 @@ function templeActivate(game_state, cell, die) {
   }
 }
 
-function templeComplete(game_state) {
+function templeCompleteCount(game_state) {
   let count = 0;
   game_state.board.forEach((row) => {
     row.forEach((cell) => {
@@ -167,7 +175,7 @@ function templeComplete(game_state) {
       }
     });
   });
-  return count === 4;
+  return count;
 }
 
 function temple2Activate(game_state, cell, die) {
@@ -184,7 +192,10 @@ function temple2Activate(game_state, cell, die) {
     cell.completed = true;
     cell.temple_completed = true;
     cell.used_idx = -1;
-    if (templeComplete(game_state)) {
+    let count = templeCompleteCount(game_state);
+    v4lerp(final_bg_color, count / 4, final_bg_color_default, [0.1,0,0,1]);
+    v4lerp(final_fg_color, count / 4, final_fg_color_default, [1,0.3,0.2,1]);
+    if (count === 4) {
       ui.modalDialog({
         title: 'You win!',
         text: 'The temple has been unlocked, unlocking your path to prosperity and victory.\n\nThanks for playing!',
@@ -1646,7 +1657,7 @@ class FaceState {
     this.type = type;
     this.level = 1;
     if (engine.DEBUG) {
-      // this.level = 8;
+      this.level = 8;
     }
     this.xp = 0;
     this.xp_next = xpForNextLevel(this.level);
@@ -1708,6 +1719,8 @@ class Die {
 class GameState {
   constructor(def) {
     const { w, h, seed } = def;
+    v4copy(final_fg_color, final_fg_color_default);
+    v4copy(final_bg_color, final_bg_color_default);
     this.rand = randCreate(mashString(seed));
     this.turn_idx = 0;
     this.w = w;
@@ -1830,12 +1843,16 @@ class GameState {
       // this.dice[0].faces[0].type = Face.Entertain;
       // this.dice[0].cur_face = 0;
       // this.selectDie(0);
+      // this.activateCell([10,7]);
 
       // Parlor test
       // this.dice[0].faces[0].type = Face.Entertain;
       // this.dice[0].cur_face = 0;
       // this.selectDie(0);
       // this.setInitialCell([7,8], CellType.Parlor);
+
+      // Temple test
+      this.setExplored([11,10]);
     }
   }
   lazyInterpReset(key, value) {
@@ -1896,7 +1913,7 @@ class GameState {
           same = false;
         }
       }
-    } while (same);
+    } while (same && new_roll.length);
     this.last_roll = new_roll;
     playUISound('dice');
     anim.add(0, 400, (progress) => {
@@ -2642,6 +2659,17 @@ function doScroll() {
   v2floor(view_origin, view_origin_float);
 }
 
+function applyColors() {
+  applyCopy({
+    filter_linear: true,
+    shader: 'test',
+    params: {
+      color1: final_bg_color,
+      color2: final_fg_color,
+    },
+  });
+}
+
 function statePlay(dt) {
   camera2d.setAspectFixed(game_width, game_height);
   gl.clearColor(bg_color[0], bg_color[1], bg_color[2], 0);
@@ -2687,6 +2715,8 @@ function statePlay(dt) {
   drawBoard();
   drawFloaters();
   drawDice();
+
+  effectsQueue(1000, applyColors);
 }
 
 export function main() {
@@ -2731,6 +2761,8 @@ export function main() {
     return;
   }
   font = engine.font;
+
+  registerShader('test', { fp: 'shaders/test.fp' });
 
   uiBindSounds({
     die: ['die1', 'die2', 'die3'],
