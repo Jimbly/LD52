@@ -438,10 +438,8 @@ function marketActivate(game_state, cell, die) {
         }
         x += ui.button_width + PROMPT_PAD;
       } else if (entry.type === 'face') {
-        // eslint-disable-next-line @typescript-eslint/no-use-before-define
         let free_library = freeLibrary(game_state);
         let disabled = !free_library || entry.purchased;
-        // eslint-disable-next-line @typescript-eslint/no-use-before-define
         let face_state = newFace(entry.face);
         face_state.level = entry.level;
         face_state.no_show_xp = true;
@@ -614,7 +612,6 @@ const CELL_TYPES = [{
   action: 'Gather',
   gather_currency: 'wood',
   init: resourceInit,
-  // eslint-disable-next-line @typescript-eslint/no-use-before-define
   activate: resourceActivate,
   indoors: false,
   need_face: Face.Gather,
@@ -625,7 +622,6 @@ const CELL_TYPES = [{
   action: 'Gather',
   gather_currency: 'stone',
   init: resourceInit,
-  // eslint-disable-next-line @typescript-eslint/no-use-before-define
   activate: resourceActivate,
   indoors: false,
   need_face: Face.Gather,
@@ -636,7 +632,6 @@ const CELL_TYPES = [{
   action: 'Build',
   indoors: false,
   need_face: Face.Build,
-  // eslint-disable-next-line @typescript-eslint/no-use-before-define
   activate: buildActivate,
 }, {
   name: 'TownSell',
@@ -853,12 +848,56 @@ const CELL_TYPES = [{
   currency: 'money',
 }, {
   name: 'CuddleLeft',
+  label: 'Cuddle Room',
+  action: 'Cuddle',
   indoors: true,
+  wide: true,
   need_face: Face.Any,
+  check: function (game_state, cell, die) {
+    if (!freeBedroom(game_state)) {
+      return 'Need\nBedroom';
+    }
+    if (cell.child) {
+      return 'Busy';
+    }
+    return null;
+  },
+  activate: function (game_state, cell, die) {
+    die.used = false;
+    cell.used_idx = -1;
+    let right = [cell.pos[0]+1, cell.pos[1]];
+    let other_die = game_state.freeDieAt(right);
+    if (other_die === -1) {
+      return;
+    }
+    cuddleActivate(game_state, cell.pos, right);
+  },
 }, {
   name: 'CuddleRight',
+  action: 'Cuddle',
   indoors: true,
   need_face: Face.Any,
+  check: function (game_state, cell, die) {
+    if (!freeBedroom(game_state)) {
+      return 'Need\nBedroom';
+    }
+    let left = [cell.pos[0]-1, cell.pos[1]];
+    let left_cell = game_state.getCell(left);
+    if (left_cell.child) {
+      return 'Busy';
+    }
+    return null;
+  },
+  activate: function (game_state, cell, die) {
+    die.used = false;
+    cell.used_idx = -1;
+    let left = [cell.pos[0]-1, cell.pos[1]];
+    let other_die = game_state.freeDieAt(left);
+    if (other_die === -1) {
+      return;
+    }
+    cuddleActivate(game_state, left, cell.pos);
+  },
 }, {
   name: 'UpgradeLeft',
   indoors: true,
@@ -987,6 +1026,31 @@ CURRENCY_TO_FRAME = {
   crop: CellType.StorageCrop,
 };
 
+function freeBedroom(game_state) {
+  let rooms = [];
+  game_state.board.forEach((row) => {
+    row.forEach((cell) => {
+      if (cell.type === CellType.Bedroom) {
+        rooms.push(cell.pos);
+      }
+    });
+  });
+  let { dice } = game_state;
+  rooms = rooms.filter((pos) => {
+    for (let ii = 0; ii < dice.length; ++ii) {
+      let die = dice[ii];
+      if (v2same(die.pos, pos)) {
+        return false;
+      }
+    }
+    return true;
+  });
+  if (rooms.length) {
+    return rooms[0];
+  }
+  return null;
+}
+
 function freeLibrary(game_state) {
   let { board } = game_state;
   for (let yy = 0; yy < board.length; ++yy) {
@@ -1054,7 +1118,6 @@ function buildPlace(game_state, cell, die, entry) {
       y, z,
     })) {
       game_state.build_mode = null;
-      // eslint-disable-next-line @typescript-eslint/no-use-before-define
       buildActivate(game_state, cell, die);
     }
     ui.panel({
@@ -1088,6 +1151,10 @@ function buildActivate(game_state, cell, die) {
     desc: 'Room for one more die',
     cost: bedroomCost(counts[CellType.Bedroom]),
   }, {
+    cell_type: CellType.CuddleLeft,
+    desc: '1 + 1 = 3',
+    cost: [5, 5, 0],
+  }, {
     cell_type: CellType.KitchenLeft,
     desc: 'Spend one die to reassign another',
     cost: [4,6,2],
@@ -1106,7 +1173,7 @@ function buildActivate(game_state, cell, die) {
   }, {
     cell_type: CellType.ReplaceLeft,
     desc: 'Store and apply new a new face',
-    cost: libraryCost(counts[CellType.Reroll]),
+    cost: libraryCost(counts[CellType.ReplaceLeft]),
   }];
   const SHOP_H = CELLDIM;
   const PROMPT_H = 480 - 2;
@@ -1209,7 +1276,7 @@ function buildActivate(game_state, cell, die) {
 
       let cell_pos = {
         x: x_icon + (type_data.wide ? 0 : CELLDIM/2), y, z,
-        color: fg_color,
+        color: disabled ? fg_color_disabled : fg_color,
       };
       sprites.cells.draw({
         ...cell_pos,
@@ -1474,9 +1541,11 @@ function newFace(type) {
   return new FaceState(type);
 }
 
+const DEFAULT_FACES = [Face.Explore, Face.Farm, Face.Farm, Face.Gather, Face.Build, Face.Trade];
+
 class Die {
-  constructor(pos) {
-    this.faces = [Face.Explore, Face.Farm, Face.Farm, Face.Gather, Face.Build, Face.Trade].map(newFace);
+  constructor(pos, faces) {
+    this.faces = (faces || DEFAULT_FACES).map(newFace);
     this.pos = [pos[0],pos[1]];
     this.bedroom = [pos[0],pos[1]];
     this.cur_face = 0;
@@ -1538,9 +1607,6 @@ class GameState {
       [11,6,CellType.TownSell],
       [10,7,CellType.TownEntertain],
       [11,7,CellType.StorageMoney],
-
-      [7,8,CellType.ReplaceLeft],
-      [8,8,CellType.ReplaceRight],
     ].forEach((pair) => {
       this.setInitialCell(pair, pair[2]);
     });
@@ -1572,13 +1638,13 @@ class GameState {
       // this.activateCell([11,6]);
 
       // Buy test
-      this.money = 50;
-      this.dice[0].cur_face = 5;
-      this.selectDie(0);
-      this.activateCell([10,6]);
+      // this.money = 50;
+      // this.dice[0].cur_face = 5;
+      // this.selectDie(0);
+      // this.activateCell([10,6]);
 
       // Build test
-      // this.wood = 4;
+      // this.wood = 10;
       // this.stone = 10;
       // this.money = 10;
       // this.dice[0].cur_face = 4;
@@ -1589,6 +1655,17 @@ class GameState {
       // Forage test
       // this.selectDie(0);
       // this.activateCell([7,8]);
+
+      // Cuddle test
+      // this.setInitialCell([7,8], CellType.CuddleLeft);
+      // this.setInitialCell([8,8], CellType.CuddleRight);
+      // this.setInitialCell([8,5], CellType.Bedroom);
+      // this.selectDie(0);
+      // this.activateCell([7,8]);
+      // setTimeout(() => {
+      //   this.selectDie(1);
+      //   this.activateCell([8,8]);
+      // }, 500);
     }
   }
   lazyInterpReset(key, value) {
@@ -1629,13 +1706,21 @@ class GameState {
     let anim = this.animation = createAnimationSequencer();
     for (let ii = 0; ii < dice.length; ++ii) {
       let die = dice[ii];
-      die.used = false;
-      die.lerp_to = die.bedroom;
-      die.lerp_t = 0;
+      if (die.used_until && this.turn_idx > die.used_until) {
+        delete die.used_until;
+      }
+      if (!die.used_until) {
+        die.used = false;
+        die.lerp_to = die.bedroom;
+        die.lerp_t = 0;
+      }
     }
     anim.add(0, 300, (progress) => {
       for (let ii = 0; ii < dice.length; ++ii) {
         let die = dice[ii];
+        if (!die.lerp_to) {
+          continue;
+        }
         die.lerp_t = progress;
         die.cur_face = floor(progress * 6);
         if (progress === 1) {
@@ -1645,6 +1730,18 @@ class GameState {
           die.cur_face = this.rand.range(6);
         }
       }
+    });
+
+    this.board.forEach((row) => {
+      row.forEach((cell) => {
+        if (cell.used_until) {
+          if (this.turn_idx > cell.used_until) {
+            delete cell.used_until;
+          } else {
+            cell.used_idx = this.turn_idx;
+          }
+        }
+      });
     });
   }
   allDiceUsed() {
@@ -1865,7 +1962,6 @@ class GameState {
       }
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-use-before-define
     doScroll();
 
     if (eat_input) {
@@ -1882,6 +1978,43 @@ class GameState {
       }
     }
   }
+}
+
+function cuddleActivate(game_state, pos_left, pos_right) {
+  let left = game_state.getCell(pos_left);
+  let right = game_state.getCell(pos_right);
+  let { dice } = game_state;
+  let left_die = dice[game_state.freeDieAt(pos_left)];
+  let right_die_idx = game_state.freeDieAt(pos_right);
+  let right_die = dice[right_die_idx];
+  left.used_idx = game_state.turn_idx;
+  right.used_idx = game_state.turn_idx;
+  left_die.used = true;
+  right_die.used = true;
+
+  // create child
+  let pos = freeBedroom(game_state);
+  let faces = [];
+  for (let ii = 0; ii < left_die.faces.length; ++ii) {
+    faces.push(left_die.faces[ii].type);
+  }
+  for (let ii = 0; ii < right_die.faces.length; ++ii) {
+    faces.push(right_die.faces[ii].type);
+  }
+  while (faces.length > 6) {
+    let idx = game_state.rand.range(faces.length);
+    ridx(faces, idx);
+  }
+  let die = left.child = new Die(pos, faces);
+  die.pos = [pos_left[0] + 0.5, pos_left[1]];
+  die.used = true;
+  game_state.dice.push(die);
+
+  left_die.used_until = game_state.turn_idx;
+  right_die.used_until = game_state.turn_idx+1;
+  die.used_until = game_state.turn_idx+2;
+  left.used_until = game_state.turn_idx+2;
+  right.used_until = game_state.turn_idx+2;
 }
 
 
