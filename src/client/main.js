@@ -2002,12 +2002,12 @@ class GameState {
       // this.activateCell([7,8]);
 
       // Cuddle test
-      this.setInitialCell([7,8], CellType.CuddleLeft);
-      this.setInitialCell([8,8], CellType.CuddleRight);
-      this.setInitialCell([8,5], CellType.Bedroom);
-      this.setInitialCell([8,4], CellType.Bedroom);
-      this.selectDie(0);
-      this.activateCell([7,8]);
+      // this.setInitialCell([7,8], CellType.CuddleLeft);
+      // this.setInitialCell([8,8], CellType.CuddleRight);
+      // this.setInitialCell([8,5], CellType.Bedroom);
+      // this.setInitialCell([8,4], CellType.Bedroom);
+      // this.selectDie(0);
+      // this.activateCell([7,8]);
       // setTimeout(() => {
       //   this.selectDie(1);
       //   this.activateCell([8,8]);
