@@ -1001,7 +1001,7 @@ const CELL_TYPES = [{
   need_face: Face.Any,
   check: function (game_state, cell, die) {
     if (!freeBedroom(game_state)) {
-      return 'Need\nBedroom';
+      return 'Need\nBunk';
     }
     if (cell.child) {
       return 'Busy';
@@ -1025,7 +1025,7 @@ const CELL_TYPES = [{
   need_face: Face.Any,
   check: function (game_state, cell, die) {
     if (!freeBedroom(game_state)) {
-      return 'Need\nBedroom';
+      return 'Need\nBunk';
     }
     let left = [cell.pos[0]-1, cell.pos[1]];
     let left_cell = game_state.getCell(left);
